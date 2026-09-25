@@ -104,7 +104,13 @@ def connector_runs(key: str, page: Page = Depends(page_params), p: Principal = D
         stmt = select(ConnectorRun).where(ConnectorRun.connector_key == key)
         total = db.scalar(select(func.count()).select_from(stmt.subquery()))
         items = db.scalars(stmt.order_by(ConnectorRun.started_at.desc()).limit(page.limit).offset(page.offset)).all()
-        return paged(rows(items), total, page)
+        out = rows(items)
+        if not p.has(Perm.PLATFORM_ADMIN):
+            # Run params/errors reference records fetched for every tenant's landscapes: counts only.
+            for r in out:
+                r["error_detail"] = [{"error": (e.get("error") or e.get("fatal") or "")[:200]} for e in r["error_detail"]]
+                r["params"] = {}
+        return paged(out, total, page)
 
 
 # ------------------------------------------------------------------ users

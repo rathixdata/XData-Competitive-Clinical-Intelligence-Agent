@@ -39,3 +39,18 @@ def row(obj: Any, *, exclude: set[str] | None = None, include: set[str] | None =
 
 def rows(objs: list[Any], **kw: Any) -> list[dict[str, Any]]:
     return [row(o, **kw) for o in objs]
+
+
+def redact_provenance(d: dict[str, Any], *, platform_admin: bool) -> dict[str, Any]:
+    """Shared public-corpus rows carry fetch provenance aggregated across tenants (e.g. PubMed queries and
+    landscape ids). Only platform administrators may see it; tenants get the non-identifying parts."""
+    if platform_admin:
+        return d
+    out = dict(d)
+    qp = out.get("query_provenance")
+    if isinstance(qp, dict):
+        out["query_provenance"] = {k: v for k, v in qp.items() if k in ("mode", "dataset", "esearch")}
+    elif isinstance(qp, list):
+        out["query_provenance"] = [{k: v for k, v in x.items() if k in ("mode", "dataset", "esearch")}
+                                   for x in qp if isinstance(x, dict)]
+    return out

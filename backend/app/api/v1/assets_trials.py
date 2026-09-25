@@ -11,7 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import Page, get_db, page_params, paged, require
-from app.api.serialize import row, rows
+from app.api.serialize import redact_provenance, row, rows
 from app.core.errors import NotFound, ValidationFailed
 from app.core.rbac import Perm
 from app.core.security import Principal
@@ -117,7 +117,9 @@ def asset_detail(asset_id: uuid.UUID, p: Principal = Depends(require(Perm.ENTITY
         "asset": row(a), "company": row(comp) if comp else None,
         "trials": [{**row(t, exclude={"current"}), "primary_endpoints": [o.get("measure") for o in (t.current or {}).get(
             "primary_endpoints", [])]} for t in trials],
-        "publications": rows(pubs, exclude={"abstract"}), "regulatory_events": rows(regs), "catalysts": rows(cats),
+        "publications": [redact_provenance(x, platform_admin=p.has(Perm.PLATFORM_ADMIN))
+                         for x in rows(pubs, exclude={"abstract"})],
+        "regulatory_events": rows(regs), "catalysts": rows(cats),
         "timeline": timeline[:100],
     }
 
@@ -225,7 +227,8 @@ def trial_snapshot(ref: str, version: int, include_raw: bool = False, p: Princip
     if s is None:
         raise NotFound("snapshot not found")
     doc = db.get(SourceDocument, s.source_document_id)
-    out = {"snapshot": row(s), "source_document": row(doc)}
+    out = {"snapshot": row(s),
+           "source_document": redact_provenance(row(doc), platform_admin=p.has(Perm.PLATFORM_ADMIN))}
     if include_raw:
         import json
 
@@ -274,7 +277,8 @@ def source_document(doc_id: uuid.UUID, p: Principal = Depends(require(Perm.SOURC
     if d is None:
         raise NotFound("document not found")
     snaps = db.scalars(select(SourceSnapshot).where(SourceSnapshot.source_document_id == d.id)).all()
-    return {**row(d), "snapshots": [row(s, exclude={"normalized"}) for s in snaps]}
+    return {**redact_provenance(row(d), platform_admin=p.has(Perm.PLATFORM_ADMIN)),
+            "snapshots": [row(s, exclude={"normalized"}) for s in snaps]}
 
 
 @router.get("/sources/documents/{doc_id}/raw")
@@ -302,6 +306,8 @@ def evidence_context(chunk_id: uuid.UUID, window: int = Query(1, ge=0, le=3), p:
         DocumentChunk.source_document_id == c.source_document_id, DocumentChunk.embedding_model == c.embedding_model,
         DocumentChunk.chunk_index.between(c.chunk_index - window, c.chunk_index + window)).order_by(DocumentChunk.chunk_index)).all()
     d = db.get(SourceDocument, c.source_document_id)
+    if c.tenant_id is not None and c.tenant_id != p.tenant_id:
+        raise NotFound("evidence not found")
     return {"chunk": row(c, exclude={"embedding", "tsv"}), "context": [
         {"chunk_id": str(x.id), "index": x.chunk_index, "section": x.section, "text": x.text, "is_target": x.id == c.id}
-        for x in around], "document": row(d)}
+        for x in around], "document": redact_provenance(row(d), platform_admin=p.has(Perm.PLATFORM_ADMIN))}

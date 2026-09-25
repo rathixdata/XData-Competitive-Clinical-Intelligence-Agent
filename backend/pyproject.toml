@@ -61,13 +61,18 @@ include = ["app*"]
 [tool.ruff]
 line-length = 110
 target-version = "py311"
+extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S", "C4", "SIM"]
 ignore = ["S101", "B008", "S311", "E501", "B904", "SIM108"]
 
+[tool.ruff.lint.isort]
+known-third-party = ["alembic"]
+known-first-party = ["app"]
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S", "B"]
+"tests/*" = ["S", "B", "C408"]
 "alembic/*" = ["E", "F"]
 # Illustrative demo fixtures; the demo password is documented and only used for local/pilot demos.
 "app/seed/*" = ["C408", "S105", "S107"]

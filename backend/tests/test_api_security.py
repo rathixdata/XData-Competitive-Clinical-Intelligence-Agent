@@ -123,3 +123,22 @@ def test_alert_destinations_encrypted_at_rest(client, seeded):
     with session_scope(bypass_rls=True) as db:
         raw = db.execute(text("SELECT destinations_encrypted FROM alert_policies")).scalar()
         assert "SECRET" not in raw and "hooks.slack.com" not in raw
+
+
+def test_shared_corpus_provenance_does_not_leak_other_tenants_queries(client, demo_pipeline, second_tenant):
+    """PubMed query strings / landscape ids of one tenant must not be visible to another (competitive leak)."""
+    from app.models import Publication, SourceDocument
+
+    with session_scope(bypass_rls=True) as db:
+        pub = db.scalar(select(Publication).where(Publication.pmid == "99100001"))
+        doc = db.get(SourceDocument, pub.source_document_id)
+        doc_id, asset_id = doc.id, demo_pipeline["ids"]["asset:CA-201"]
+        db.execute(text("UPDATE publications SET query_provenance = :qp WHERE id = :id"),
+                   {"qp": '[{"query": "SECRET tenant A query", "landscape_ids": ["x"]}]', "id": pub.id})
+    b = login(client, "analyst@other.example", "other-pharma")
+    d = client.get(f"/api/v1/sources/documents/{doc_id}", headers=b).json()
+    assert "query" not in d["query_provenance"] and "landscape_ids" not in d["query_provenance"]
+    a = client.get(f"/api/v1/assets/{asset_id}", headers=b).text
+    assert "SECRET tenant A query" not in a
+    runs = client.get("/api/v1/admin/connectors/pubmed/runs", headers=b).json()
+    assert all(r["params"] == {} for r in runs["items"])

@@ -22,6 +22,12 @@
   - raw SQL: `test_rls_blocks_cross_tenant_rows_at_database_level`
   - RAG retrieval with a forged tenant id: `test_hybrid_retrieval_relevance_and_tenant_isolation`
 
+- **Shared public corpus.** Public records are fetched once and shared across tenants. The provenance that could
+  reveal *what another customer monitors* (PubMed query strings, landscape ids, connector run parameters and error
+  details) is visible only to platform administrators (`redact_provenance`). The corpus itself still shows which
+  public records the platform has fetched. Customers who need that hidden too should use a dedicated deployment
+  (`deployment_mode=dedicated`, a separate stack from the same manifests).
+
 ## Authentication and authorization
 
 - **OIDC/SSO.** RS256/ES256 tokens are validated against the IdP JWKS, checking issuer and audience. Tenant and roles
