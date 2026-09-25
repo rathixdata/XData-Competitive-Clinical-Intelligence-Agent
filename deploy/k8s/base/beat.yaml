@@ -1,0 +1,63 @@
+# Celery beat must run as exactly ONE instance (duplicate schedulers => duplicate runs),
+# hence replicas 1 + Recreate (never two pods during a rollout).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beat
+  labels:
+    app.kubernetes.io/name: xdata
+    app.kubernetes.io/component: beat
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: xdata
+      app.kubernetes.io/component: beat
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: xdata
+        app.kubernetes.io/component: beat
+    spec:
+      serviceAccountName: xdata
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: beat
+          image: xdata-ci-backend
+          imagePullPolicy: IfNotPresent
+          command: ["celery", "-A", "app.workers.celery_app:celery_app", "beat", "-l", "INFO",
+                    "-s", "/tmp/celerybeat-schedule"]
+          envFrom:
+            - configMapRef:
+                name: xdata-config
+            - secretRef:
+                name: xdata-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              memory: 384Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

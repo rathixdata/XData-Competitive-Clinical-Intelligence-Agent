@@ -1,0 +1,74 @@
+# Staging: production-like (EKS + RDS + ElastiCache + S3 in the staging AWS account),
+# smaller footprint. Image tags are set by CI:  kustomize edit set image ...
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: xdata-staging
+resources:
+  - ../../base
+
+labels:
+  - pairs:
+      xdata.io/environment: staging
+    includeSelectors: false
+
+images:
+  - name: xdata-ci-backend
+    newName: ghcr.io/xdata/xdata-ci-backend
+    newTag: latest   # replaced by deploy workflow with the commit SHA
+  - name: xdata-ci-web
+    newName: ghcr.io/xdata/xdata-ci-web
+    newTag: latest
+
+patches:
+  - path: config-patch.yaml
+  - target: { kind: ServiceAccount, name: xdata }
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/eks.amazonaws.com~1role-arn
+        value: arn:aws:iam::111111111111:role/xdata-staging-app-irsa
+  - target: { kind: ExternalSecret, name: xdata-secrets }
+    patch: |-
+      - op: replace
+        path: /spec/dataFrom/0/extract/key
+        value: xdata/staging/app
+  - target: { kind: Ingress }
+    patch: |-
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: staging.xdata.example.com
+      - op: replace
+        path: /spec/rules/0/host
+        value: staging.xdata.example.com
+  - target: { kind: Ingress, name: xdata }
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/cert-manager.io~1cluster-issuer
+        value: letsencrypt-staging
+  - target: { kind: HorizontalPodAutoscaler, name: api }
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicas
+        value: 4
+  - target: { kind: HorizontalPodAutoscaler, name: worker }
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 4
+  - target: { kind: PodDisruptionBudget, name: worker }
+    patch: |-
+      - op: replace
+        path: /spec/minAvailable
+        value: 0
+  - target: { kind: Deployment, name: worker }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target: { kind: NetworkPolicy, name: allow-backend-egress }
+    patch: |-
+      - op: replace
+        path: /spec/egress/0/to/0/ipBlock/cidr
+        value: 10.20.0.0/16

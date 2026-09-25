@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app.kubernetes.io/name: xdata
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: xdata
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: xdata
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: xdata
+      automountServiceAccountToken: false
+      # long enough for in-flight ingest / LLM tasks to finish (Celery warm shutdown)
+      terminationGracePeriodSeconds: 300
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: xdata-ci-backend
+          imagePullPolicy: IfNotPresent
+          command: ["celery", "-A", "app.workers.celery_app:celery_app", "worker", "-l", "INFO",
+                    "-Q", "default,ingest,intel,alerts", "--concurrency=4",
+                    "--max-tasks-per-child=200"]
+          envFrom:
+            - configMapRef:
+                name: xdata-config
+            - secretRef:
+                name: xdata-secrets
+          env:
+            - name: XDATA_OBJECT_STORE_LOCAL_PATH
+              value: /tmp/xdata-objects
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 768Mi
+            limits:
+              memory: 2Gi
+          livenessProbe:
+            exec:
+              command: ["sh", "-c",
+                        "celery -A app.workers.celery_app:celery_app inspect ping -d celery@$HOSTNAME --timeout 10"]
+            initialDelaySeconds: 60
+            periodSeconds: 120
+            timeoutSeconds: 30
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi

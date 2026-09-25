@@ -1,0 +1,62 @@
+# Production: EKS + Amazon RDS for PostgreSQL 16 (managed; pgvector + pg_trgm are
+# available as trusted extensions - created once by the bootstrap role, see
+# deploy/README.md) + ElastiCache Redis (TLS + AUTH) + S3 with Object Lock.
+# No database runs inside the cluster.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: xdata
+resources:
+  - ../../base
+
+labels:
+  - pairs:
+      xdata.io/environment: production
+    includeSelectors: false
+
+images:
+  - name: xdata-ci-backend
+    newName: ghcr.io/xdata/xdata-ci-backend
+    newTag: latest   # replaced by deploy workflow with an immutable SHA / release tag
+  - name: xdata-ci-web
+    newName: ghcr.io/xdata/xdata-ci-web
+    newTag: latest
+
+patches:
+  - path: config-patch.yaml
+  - path: resources-patch.yaml
+  - target: { kind: ServiceAccount, name: xdata }
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/eks.amazonaws.com~1role-arn
+        value: arn:aws:iam::222222222222:role/xdata-production-app-irsa
+  - target: { kind: ExternalSecret, name: xdata-secrets }
+    patch: |-
+      - op: replace
+        path: /spec/dataFrom/0/extract/key
+        value: xdata/production/app
+  - target: { kind: HorizontalPodAutoscaler, name: api }
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 20
+  - target: { kind: HorizontalPodAutoscaler, name: worker }
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 24
+  - target: { kind: PodDisruptionBudget, name: api }
+    patch: |-
+      - op: replace
+        path: /spec/minAvailable
+        value: 2
+  - target: { kind: NetworkPolicy, name: allow-backend-egress }
+    patch: |-
+      - op: replace
+        path: /spec/egress/0/to/0/ipBlock/cidr
+        value: 10.10.0.0/16

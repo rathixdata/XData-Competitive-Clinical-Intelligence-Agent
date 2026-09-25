@@ -1,0 +1,116 @@
+# SECONDARY safety net: nightly logical backup (pg_dump custom format) to S3.
+# The PRIMARY recovery mechanism is RDS automated backups + point-in-time recovery
+# (RPO 15 min, see deploy/README.md). Logical dumps protect against account-level loss /
+# accidental RDS deletion and allow restores into a different engine version.
+#
+# PG_BACKUP_URL (from xdata-secrets) should use a read-only role (pg_read_all_data) -
+# NOT the app role and NOT the RDS master user. Note: RLS applies to pg_dump too; grant the
+# backup role BYPASSRLS (it is read-only) or dumps will be tenant-filtered/empty.
+# Two containers, no custom image: pg_dump writes to a shared emptyDir, then aws-cli uploads
+# via IRSA (the bucket's default SSE-KMS key encrypts the object).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-logical-backup
+  labels:
+    app.kubernetes.io/name: xdata
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "17 3 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 7200
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: xdata
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          serviceAccountName: xdata
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: pg-dump
+              image: postgres:16-alpine
+              command: ["sh", "-c"]
+              args:
+                - >-
+                  set -eu;
+                  pg_dump --dbname="$PG_BACKUP_URL" --format=custom --compress=6
+                  --no-owner --no-privileges --file=/backup/xdata.dump;
+                  pg_restore --list /backup/xdata.dump > /dev/null;
+                  ls -l /backup
+              env:
+                - name: PG_BACKUP_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: xdata-secrets
+                      key: PG_BACKUP_URL
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 256Mi
+                limits:
+                  memory: 1Gi
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          containers:
+            - name: upload
+              image: amazon/aws-cli:2.18.0
+              command: ["sh", "-c"]
+              args:
+                - >-
+                  set -eu;
+                  KEY="$BACKUP_S3_URI/$(date -u +%Y/%m/%d)/xdata-$(date -u +%Y%m%dT%H%M%SZ).dump";
+                  aws s3 cp /backup/xdata.dump "$KEY" --only-show-errors;
+                  echo "uploaded $KEY"
+              env:
+                - name: BACKUP_S3_URI
+                  valueFrom:
+                    configMapKeyRef:
+                      name: xdata-config
+                      key: BACKUP_S3_URI
+                - name: HOME
+                  value: /tmp
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: backup
+              emptyDir:
+                sizeLimit: 20Gi
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi

@@ -1,0 +1,90 @@
+# Continuous delivery: staging -> production.
+#  * push of a v* tag: deploy the tagged commit's image (built by ci.yml on main)
+#  * manual: choose image tag, target, or run a rollback
+# Production is gated by the "production" GitHub environment (required reviewers,
+# branch/tag restrictions) - configure in Settings -> Environments.
+name: Deploy
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: deploy or rollback
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      target:
+        description: environments to deploy (staging runs first when both)
+        type: choice
+        options: [staging, staging-and-production, production]
+        default: staging
+      image_tag:
+        description: image tag (full commit SHA); defaults to the triggering commit
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+    steps:
+      - id: t
+        run: echo "tag=${{ inputs.image_tag || github.sha }}" >> "$GITHUB_OUTPUT"
+
+  staging:
+    needs: resolve
+    if: >-
+      github.event_name == 'push' ||
+      (inputs.action == 'deploy' && inputs.target != 'production')
+    uses: ./.github/workflows/deploy-env.yml
+    with:
+      environment: staging
+      image_tag: ${{ needs.resolve.outputs.tag }}
+
+  production:
+    needs: [resolve, staging]
+    # runs after a successful staging deploy, or directly when target == production
+    if: >-
+      always() && needs.resolve.result == 'success' &&
+      (
+        (github.event_name == 'push' && needs.staging.result == 'success') ||
+        (inputs.action == 'deploy' && inputs.target == 'staging-and-production' && needs.staging.result == 'success') ||
+        (inputs.action == 'deploy' && inputs.target == 'production')
+      )
+    uses: ./.github/workflows/deploy-env.yml
+    with:
+      environment: production
+      image_tag: ${{ needs.resolve.outputs.tag }}
+
+  rollback:
+    name: Rollback ${{ inputs.target }}
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'rollback'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: ${{ fromJSON(inputs.target == 'staging-and-production' && '["staging","production"]' || format('["{0}"]', inputs.target)) }}
+    environment: ${{ matrix.env }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: azure/setup-kubectl@v4
+      - run: aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER_NAME }}" --region "${{ vars.AWS_REGION }}"
+      # Application rollback only. Migrations are expand/contract, so the previous
+      # release runs against the current schema; no alembic downgrade.
+      - name: kubectl rollout undo
+        run: |
+          for d in api worker beat web; do
+            kubectl -n "${{ vars.K8S_NAMESPACE }}" rollout undo "deployment/$d"
+          done
+          for d in api worker beat web; do
+            kubectl -n "${{ vars.K8S_NAMESPACE }}" rollout status "deployment/$d" --timeout=10m
+          done

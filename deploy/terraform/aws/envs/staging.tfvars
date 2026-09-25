@@ -1,0 +1,13 @@
+environment                = "staging"
+region                     = "us-east-1"
+vpc_cidr                   = "10.20.0.0/16"
+az_count                   = 2
+eks_node_min               = 2
+eks_node_desired           = 2
+eks_node_max               = 5
+db_instance_class          = "db.t4g.large"
+redis_node_type            = "cache.t4g.medium"
+raw_bucket_name            = "xdata-ci-raw-staging"
+backup_bucket_name         = "xdata-backups-staging"
+object_lock_retention_days = 30
+k8s_namespace              = "xdata-staging"

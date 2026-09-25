@@ -1,0 +1,38 @@
+# Non-secret settings. Secrets (DB URL with password, redis auth, JWT/Fernet/webhook keys,
+# vendor API keys) come from the ExternalSecret-managed Secret "xdata-secrets".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: xdata-config
+data:
+  XDATA_ENV: production
+  XDATA_LOG_JSON: "true"
+  XDATA_LOG_LEVEL: INFO
+  XDATA_PUBLIC_BASE_URL: https://app.xdata.example.com
+  XDATA_CORS_ORIGINS: '["https://app.xdata.example.com"]'
+  # object store: S3 via IRSA (no static keys)
+  XDATA_OBJECT_STORE_BACKEND: s3
+  XDATA_S3_BUCKET: xdata-ci-raw-prod
+  XDATA_S3_REGION: us-east-1
+  XDATA_S3_KMS_KEY_ID: alias/xdata-production-s3
+  # AI
+  XDATA_LLM_PROVIDER: anthropic
+  XDATA_LLM_MODEL: claude-opus-5
+  XDATA_EMBEDDING_PROVIDER: voyage
+  XDATA_EMBEDDING_DIM: "1024"
+  # connectors / delivery
+  XDATA_SEC_USER_AGENT: XData CI Agent ops@xdata.example.com
+  XDATA_SMTP_HOST: email-smtp.us-east-1.amazonaws.com
+  XDATA_SMTP_PORT: "587"
+  XDATA_SMTP_FROM: intelligence@xdata.example.com
+  # enterprise SSO (optional). Omit the keys entirely to disable; empty strings are NOT
+  # treated as unset by the settings loader.
+  # XDATA_OIDC_ISSUER: https://login.example-idp.com/
+  # XDATA_OIDC_AUDIENCE: xdata-ci-api
+  # XDATA_OIDC_JWKS_URL: https://login.example-idp.com/.well-known/jwks.json
+  # tracing: OTel collector (DaemonSet / sidecar) endpoint
+  XDATA_OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc:4317
+  # runtime tuning
+  WEB_CONCURRENCY: "2"
+  # logical backup target (see backup-cronjob.yaml)
+  BACKUP_S3_URI: s3://xdata-backups-prod/pg_dump

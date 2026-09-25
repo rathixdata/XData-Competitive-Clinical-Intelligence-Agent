@@ -1,0 +1,35 @@
+# XData CI Agent - Kubernetes base. Environment specifics live in ../overlays/*.
+# Render: kubectl kustomize deploy/k8s/overlays/staging
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: xdata
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: xdata-ci-agent
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - externalsecret.yaml
+  - migrate-job.yaml
+  - api.yaml
+  - worker.yaml
+  - beat.yaml
+  - web.yaml
+  - ingress.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+  - backup-cronjob.yaml
+
+images:
+  - name: xdata-ci-backend
+    newName: ghcr.io/xdata/xdata-ci-backend
+    newTag: latest
+  - name: xdata-ci-web
+    newName: ghcr.io/xdata/xdata-ci-web
+    newTag: latest

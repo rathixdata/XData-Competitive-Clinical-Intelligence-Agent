@@ -1,0 +1,107 @@
+# XData CI Agent - Prometheus alerting rules.
+# Thresholds reflect the SLOs in deploy/README.md; tune per environment.
+groups:
+  - name: xdata-connectors
+    rules:
+      - alert: XDataConnectorStale
+        # Freshness SLO: every connector must have succeeded within the last 6 hours.
+        expr: (time() - xdata_connector_last_success_timestamp) > 6 * 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Connector {{ $labels.connector }} is stale"
+          description: "No successful run of {{ $labels.connector }} for {{ $value | humanizeDuration }} (SLO 6h)."
+      - alert: XDataConnectorStaleCritical
+        expr: (time() - xdata_connector_last_success_timestamp) > 24 * 3600
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Connector {{ $labels.connector }} has not succeeded for >24h"
+          description: "Source data from {{ $labels.connector }} is at least a day old; intelligence is degraded."
+      - alert: XDataConnectorFailures
+        expr: |
+          sum by (connector) (increase(xdata_connector_runs_total{status="failed"}[1h])) >= 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Connector {{ $labels.connector }} failing repeatedly"
+          description: "{{ $value }} failed runs of {{ $labels.connector }} in the last hour."
+
+  - name: xdata-api
+    rules:
+      - alert: XDataApiHigh5xxRate
+        expr: |
+          sum(rate(xdata_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(xdata_http_requests_total[5m])), 1e-9) > 0.02
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API 5xx error rate above 2%"
+          description: "Current 5xx ratio: {{ $value | humanizePercentage }}."
+      - alert: XDataApiHighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, route) (rate(xdata_http_request_seconds_bucket{route!~".*/ask/stream"}[5m]))) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 latency > 2s on {{ $labels.route }}"
+          description: "p95 is {{ $value | humanizeDuration }} (streaming endpoint excluded)."
+      - alert: XDataApiDown
+        expr: up{job="xdata-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API scrape target down"
+          description: "Prometheus cannot scrape {{ $labels.instance }}."
+
+  - name: xdata-pipeline
+    rules:
+      - alert: XDataAlertPipelineSlow
+        # SLO: a material source change reaches the alert stage within 15 minutes (p95).
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(xdata_pipeline_latency_seconds_bucket{stage="source_fetch_to_alert"}[30m]))) > 900
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alert pipeline p95 latency > 15 min"
+          description: "source_fetch_to_alert p95 is {{ $value | humanizeDuration }}."
+      - alert: XDataAlertDeliveriesDeadLettered
+        expr: sum by (channel) (increase(xdata_alert_deliveries_total{status="dead"}[15m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alert deliveries dead-lettered on {{ $labels.channel }}"
+          description: "{{ $value }} alert deliveries exhausted retries in the last 15m; customers may have missed alerts."
+
+  - name: xdata-llm
+    rules:
+      - alert: XDataLlmFailureRate
+        expr: |
+          sum by (workflow) (rate(xdata_llm_calls_total{status!="succeeded"}[10m]))
+            / clamp_min(sum by (workflow) (rate(xdata_llm_calls_total[10m])), 1e-9) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM failure rate > 10% for {{ $labels.workflow }}"
+          description: "Failure ratio {{ $value | humanizePercentage }}."
+      - alert: XDataClaimValidationRejectSpike
+        expr: |
+          sum(rate(xdata_claim_validation_total{status="unsupported"}[1h]))
+            / clamp_min(sum(rate(xdata_claim_validation_total[1h])), 1e-9) > 0.25
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 25% of generated claims fail evidence validation"
+          description: "Possible model/prompt regression or retrieval degradation."

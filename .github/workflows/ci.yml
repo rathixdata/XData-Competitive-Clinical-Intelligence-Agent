@@ -1,0 +1,322 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "22"
+  # Shared test DB settings (non-superuser role so RLS is actually exercised).
+  XDATA_ENV: test
+  XDATA_DATABASE_URL: postgresql+psycopg://xdata:xdata@localhost:5432/xdata_test
+  XDATA_REDIS_URL: redis://localhost:6379/0
+  XDATA_LLM_PROVIDER: offline
+  XDATA_EMBEDDING_PROVIDER: hashing
+  XDATA_OBJECT_STORE_BACKEND: local
+  XDATA_LOG_JSON: "false"
+  PGPASSWORD: postgres
+
+jobs:
+  # ---------------------------------------------------------------------------
+  backend:
+    name: Backend (lint, migrations, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Create app role, test database and extensions
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE xdata LOGIN PASSWORD 'xdata' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+          CREATE DATABASE xdata_test OWNER xdata;
+          SQL
+          psql -h localhost -U postgres -d xdata_test -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS vector;
+          CREATE EXTENSION IF NOT EXISTS pg_trgm;
+          ALTER SCHEMA public OWNER TO xdata;
+          SQL
+
+      - name: Install backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "backend[dev]"
+
+      - name: Ruff
+        run: ruff check backend
+
+      - name: Migrations - upgrade / check / downgrade / upgrade (reversibility)
+        working-directory: backend
+        run: |
+          alembic upgrade head
+          alembic check
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Tests
+        working-directory: backend
+        run: pytest tests -q --cov=app --cov-report=xml --cov-report=term
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  ai-eval:
+    name: AI evaluation gate (golden suite, offline)
+    needs: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Create app role, test database and extensions
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE xdata LOGIN PASSWORD 'xdata' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+          CREATE DATABASE xdata_test OWNER xdata;
+          SQL
+          psql -h localhost -U postgres -d xdata_test -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS vector;
+          CREATE EXTENSION IF NOT EXISTS pg_trgm;
+          ALTER SCHEMA public OWNER TO xdata;
+          SQL
+
+      - name: Install backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "backend[dev]"
+
+      - name: Migrate
+        working-directory: backend
+        run: alembic upgrade head
+
+      # Non-zero exit (thresholds not met: grounding / citation accuracy / hallucination
+      # rate etc.) fails the build.
+      - name: Run golden evaluation suite
+        run: python -m evals.run --suite golden --offline
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-eval-report
+          path: |
+            evals/reports/
+            evals/**/*.json
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: Frontend (lint, typecheck, test, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test   # vitest runs once (non-watch) when CI=true
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  security:
+    name: Security scans
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gitleaks scans history
+
+      - name: Gitleaks (secrets)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}  # required for organisation accounts
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: pip-audit (backend dependencies)
+        run: |
+          python -m venv /tmp/audit
+          /tmp/audit/bin/pip install --quiet --upgrade pip
+          /tmp/audit/bin/pip install --quiet "./backend[otel]" pip-audit
+          /tmp/audit/bin/pip-audit --progress-spinner off --desc
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Blocks on high/critical advisories only; moderate/low are reported, not blocking.
+      - name: npm audit (frontend dependencies)
+        working-directory: frontend
+        run: |
+          npm audit --audit-level=moderate || true
+          npm audit --audit-level=high
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Docker images (${{ matrix.image }})
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: xdata-ci-backend
+            context: backend
+          - image: xdata-ci-web
+            context: frontend
+    env:
+      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image name (ghcr requires lowercase)
+        id: name
+        run: echo "ref=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.name.outputs.ref }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # Build once into the local daemon for scanning, then push from cache.
+      - name: Build (load for scan)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          load: true
+          push: false
+          tags: ${{ steps.name.outputs.ref }}:scan
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.name.outputs.ref }}:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: "1"
+          format: table
+
+      - name: Push
+        if: env.PUSH == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          provenance: true
+          sbom: true

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: xdata-config
+data:
+  XDATA_ENV: production
+  XDATA_PUBLIC_BASE_URL: https://app.xdata.example.com
+  XDATA_CORS_ORIGINS: '["https://app.xdata.example.com"]'
+  XDATA_S3_BUCKET: xdata-ci-raw-prod
+  XDATA_S3_KMS_KEY_ID: alias/xdata-production-s3
+  WEB_CONCURRENCY: "3"
+  BACKUP_S3_URI: s3://xdata-backups-prod/pg_dump

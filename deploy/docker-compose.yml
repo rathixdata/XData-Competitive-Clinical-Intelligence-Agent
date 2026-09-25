@@ -1,0 +1,225 @@
+# =============================================================================
+# XData CI Agent - docker compose stack for local development and pilots.
+#
+#   make up                       # == docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
+#   make seed                     # loads the demo tenant (profile "seed")
+#   open http://localhost:8080    # web UI (nginx -> api)
+#
+# Configuration: copy ../.env.example to ../.env. Values are read two ways:
+#   * env_file ../.env -> passed verbatim into backend containers;
+#   * ${VAR:-default}   -> compose interpolation (needs `--env-file .env` from the repo
+#                          root, which the Makefile does) for values compose itself uses.
+# Network-bound settings (DB / redis / S3 endpoints) are pinned below to the compose
+# service names so a ../.env written for host-side `make dev-api` still works here.
+#
+# NOT for production: production runs on EKS + RDS + ElastiCache + S3 (see deploy/k8s,
+# deploy/terraform and deploy/README.md).
+# =============================================================================
+name: xdata
+
+x-backend: &backend
+  build:
+    context: ../backend
+    dockerfile: Dockerfile
+  image: ${XDATA_BACKEND_IMAGE:-xdata-ci-backend:local}
+  restart: unless-stopped
+  env_file:
+    - path: ../.env
+      required: false
+  environment: &backend-env
+    XDATA_ENV: ${XDATA_ENV:-development}
+    XDATA_DATABASE_URL: postgresql+psycopg://xdata:${XDATA_DB_PASSWORD:-xdata}@postgres:5432/xdata
+    XDATA_REDIS_URL: redis://redis:6379/0
+    XDATA_OBJECT_STORE_BACKEND: s3
+    XDATA_S3_BUCKET: ${XDATA_S3_BUCKET:-xdata-ci-raw}
+    XDATA_S3_REGION: ${XDATA_S3_REGION:-us-east-1}
+    XDATA_S3_ENDPOINT_URL: http://minio:9000
+    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-xdataminio}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-xdataminio-secret}
+    XDATA_PUBLIC_BASE_URL: ${XDATA_PUBLIC_BASE_URL:-http://localhost:8080}
+    XDATA_CORS_ORIGINS: ${XDATA_CORS_ORIGINS:-["http://localhost:8080","http://localhost:5173"]}
+    XDATA_LLM_PROVIDER: ${XDATA_LLM_PROVIDER:-offline}
+    XDATA_EMBEDDING_PROVIDER: ${XDATA_EMBEDDING_PROVIDER:-hashing}
+    XDATA_LOG_JSON: ${XDATA_LOG_JSON:-true}
+  networks: [backend]
+
+services:
+  # ---------------------------------------------------------------- data stores
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+      # consumed by init/01-init.sql via \getenv to create the non-superuser app role
+      XDATA_DB_PASSWORD: ${XDATA_DB_PASSWORD:-xdata}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      # -h 127.0.0.1: the temporary init server only listens on the unix socket, so this
+      # stays "unhealthy" until init scripts have finished and the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d xdata"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [backend]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [backend]
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-xdataminio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-xdataminio-secret}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API
+      - "127.0.0.1:9001:9001"   # console
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backend]
+
+  createbucket:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-xdataminio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-xdataminio-secret}
+      BUCKET: ${XDATA_S3_BUCKET:-xdata-ci-raw}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$BUCKET"
+        mc version enable "local/$$BUCKET"
+        echo "bucket $$BUCKET ready"
+    restart: "no"
+    networks: [backend]
+
+  # ---------------------------------------------------------------- one-shots
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  seed:
+    <<: *backend
+    profiles: ["seed"]
+    command: ["python", "-m", "app.cli", "seed-demo"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      createbucket:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------- app
+  api:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      createbucket:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *backend
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app:celery_app
+      - worker
+      - -l
+      - INFO
+      - -Q
+      - default,ingest,intel,alerts
+      - --concurrency=${CELERY_CONCURRENCY:-4}
+    healthcheck:
+      # the image healthcheck probes HTTP; workers have no HTTP server
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      createbucket:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  beat:
+    <<: *backend
+    # schedule state in /tmp so the container filesystem can stay read-only
+    command: ["celery", "-A", "app.workers.celery_app:celery_app", "beat", "-l", "INFO",
+              "-s", "/tmp/celerybeat-schedule"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    image: ${XDATA_WEB_IMAGE:-xdata-ci-web:local}
+    restart: unless-stopped
+    environment:
+      XDATA_API_UPSTREAM_HOST: api:8000
+    ports:
+      - "${WEB_HOST_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [backend]
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+
+networks:
+  backend:

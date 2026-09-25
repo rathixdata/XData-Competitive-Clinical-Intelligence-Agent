@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: xdata-config
+data:
+  XDATA_ENV: staging
+  XDATA_LOG_LEVEL: DEBUG
+  XDATA_PUBLIC_BASE_URL: https://staging.xdata.example.com
+  XDATA_CORS_ORIGINS: '["https://staging.xdata.example.com"]'
+  XDATA_S3_BUCKET: xdata-ci-raw-staging
+  XDATA_S3_KMS_KEY_ID: alias/xdata-staging-s3
+  BACKUP_S3_URI: s3://xdata-backups-staging/pg_dump

@@ -1,0 +1,106 @@
+# Reusable: deploy one environment (called by deploy.yml).
+# Auth: GitHub OIDC -> AWS IAM role (no long-lived keys). Per-environment values live in
+# GitHub *environment* variables:  AWS_DEPLOY_ROLE_ARN, AWS_REGION, EKS_CLUSTER_NAME,
+# K8S_NAMESPACE, PUBLIC_URL.
+name: deploy-env
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.PUBLIC_URL }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      OVERLAY: deploy/k8s/overlays/${{ inputs.environment }}
+      NS: ${{ vars.K8S_NAMESPACE }}
+      TAG: ${{ inputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}   # e.g. arn:aws:iam::<acct>:role/xdata-<env>-github-deploy
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: azure/setup-kubectl@v4
+      - uses: imranismail/setup-kustomize@v2
+
+      - name: Kubeconfig
+        run: aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER_NAME }}" --region "${{ vars.AWS_REGION }}"
+
+      - name: Set image tags
+        working-directory: ${{ env.OVERLAY }}
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          kustomize edit set image \
+            "xdata-ci-backend=ghcr.io/${OWNER}/xdata-ci-backend:${TAG}" \
+            "xdata-ci-web=ghcr.io/${OWNER}/xdata-ci-web:${TAG}"
+          kustomize build . > "${RUNNER_TEMP}/rendered.yaml"
+
+      # Excludes the migrate Job: Jobs are immutable, so a changed image would fail dry-run.
+      # (On the very first deploy the namespace does not exist yet; this step is then skipped.)
+      - name: Server-side dry run
+        run: |
+          if kubectl get namespace "$NS" >/dev/null 2>&1; then
+            kubectl apply --dry-run=server -f "${RUNNER_TEMP}/rendered.yaml" -l 'app.kubernetes.io/component!=migrate'
+          fi
+
+      # Jobs are immutable: replace the migration Job, run it alone, wait for it.
+      - name: Run database migrations
+        run: |
+          # 1) prerequisites without a component label (namespace, SA, ConfigMap, ExternalSecret,
+          #    NetworkPolicies...) so the Job sees the new config
+          kubectl apply -f "${RUNNER_TEMP}/rendered.yaml" -l '!app.kubernetes.io/component'
+          # 2) replace + run the migration Job before any app pod changes
+          kubectl -n "$NS" delete job xdata-migrate --ignore-not-found --wait=true
+          kubectl -n "$NS" apply -f "${RUNNER_TEMP}/rendered.yaml" -l app.kubernetes.io/component=migrate
+          if ! kubectl -n "$NS" wait --for=condition=complete job/xdata-migrate --timeout=25m; then
+            kubectl -n "$NS" logs job/xdata-migrate --all-containers || true
+            exit 1
+          fi
+          kubectl -n "$NS" logs job/xdata-migrate --all-containers
+
+      - name: Apply manifests
+        run: kubectl apply -f "${RUNNER_TEMP}/rendered.yaml"
+
+      - name: Wait for rollouts
+        run: |
+          for d in api worker beat web; do
+            kubectl -n "$NS" rollout status "deployment/$d" --timeout=10m
+          done
+
+      - name: Smoke test
+        if: vars.PUBLIC_URL != ''
+        run: |
+          for i in $(seq 1 10); do
+            curl -fsS "${{ vars.PUBLIC_URL }}/healthz" && exit 0
+            sleep 6
+          done
+          exit 1
+
+      - name: Automatic rollback on failure
+        if: failure()
+        run: |
+          for d in api worker beat web; do
+            kubectl -n "$NS" rollout undo "deployment/$d" || true
+          done

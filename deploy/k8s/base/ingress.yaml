@@ -1,0 +1,75 @@
+# Two Ingress objects because ingress-nginx annotations apply per object:
+#  * xdata         - UI (web) and REST API (api), normal buffering/timeouts
+#  * xdata-stream  - SSE endpoint /api/v1/ask/stream: buffering off, 10 min read timeout
+# TLS certs are issued by cert-manager (ClusterIssuer "letsencrypt"); swap for ACM +
+# AWS Load Balancer Controller if preferred. Host names are patched per overlay.
+# HSTS is emitted by ingress-nginx itself (controller ConfigMap: hsts=true, the default;
+# set hsts-max-age=63072000 and hsts-include-subdomains=true for production).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: xdata
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 25m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [app.xdata.example.com]
+      secretName: xdata-tls
+  rules:
+    - host: app.xdata.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  name: http
+          - path: /healthz
+            pathType: Exact
+            backend:
+              service:
+                name: api
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: xdata-stream
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [app.xdata.example.com]
+      secretName: xdata-tls
+  rules:
+    - host: app.xdata.example.com
+      http:
+        paths:
+          - path: /api/v1/ask/stream
+            pathType: Exact
+            backend:
+              service:
+                name: api
+                port:
+                  name: http

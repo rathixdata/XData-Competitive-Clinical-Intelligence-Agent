@@ -1,0 +1,27 @@
+# Gitleaks configuration: default ruleset + project allowlist.
+# Run locally:  gitleaks detect --config .gitleaks.toml   (or via pre-commit)
+title = "xdata-ci-agent gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented placeholders and synthetic test fixtures"
+paths = [
+  '''^\.env\.example$''',
+  '''^backend/tests/fixtures/''',
+  '''^deploy/observability/grafana/dashboards/.*\.json$''',
+]
+# Known non-secret placeholder values used in docs, compose defaults and CI.
+regexes = [
+  '''dev-only-change-me[\w-]*''',
+  '''dev-webhook-secret''',
+  '''change-me[\w-]*''',
+  '''xdataminio(-secret)?''',
+  '''postgresql\+psycopg://xdata:xdata@''',
+  '''<generated>''',
+]
+stopwords = [
+  "placeholder",
+  "example",
+]

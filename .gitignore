@@ -1,0 +1,55 @@
+# ---- secrets / local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+celerybeat-schedule*
+
+# ---- local data (object store, uploads, eval reports)
+.data/
+evals/reports/
+
+# ---- node / frontend
+node_modules/
+frontend/dist/
+frontend/coverage/
+.vite/
+npm-debug.log*
+*.tsbuildinfo
+
+# ---- terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+.terraform.tfstate.lock.info
+
+# ---- editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ---- local services
+dump.rdb
