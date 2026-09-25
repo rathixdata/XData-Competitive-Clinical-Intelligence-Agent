@@ -145,11 +145,11 @@ def explain_answer(content: dict[str, Any], retrieval: dict[str, int], served_mo
         limits.insert(0, "The system abstained because retained evidence did not support a verified answer.")
     if content.get("comparison_warning"):
         limits.append(content["comparison_warning"])
-    if degraded or served_model == "offline-deterministic":
+    if (degraded or served_model == "offline-deterministic") and not any("extractive" in x for x in limits):
         limits.append("Answer produced in extractive mode (no language-model interpretation).")
     limits.append("Confidence labels are policy-based, not calibrated probabilities.")
     steps = [
-        f"Understood the question: entities {list(content.get('resolved_context', {}).get('entity_labels', {}).values()) or 'none'}"
+        f"Understood the question: entities {', '.join(content.get('resolved_context', {}).get('entity_labels', {}).values()) or 'none'}"
         f"{', time window from ' + content['resolved_context']['since'][:10] if content.get('resolved_context', {}).get('since') else ''}"
         f"{', comparison' if content.get('resolved_context', {}).get('comparison') else ''}.",
         f"Retrieved {retrieval.get('structured', 0)} structured record(s), {retrieval.get('changes', 0)} change record(s) "

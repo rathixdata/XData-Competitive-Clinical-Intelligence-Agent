@@ -200,12 +200,17 @@ def _matrix_rows(db: Session, tenant_id: uuid.UUID, landscape_id: uuid.UUID | No
             f"{(t.current or {}).get('primary_completion_date')}, primary endpoint "
             f"{', '.join(o.get('measure', '') for o in (t.current or {}).get('primary_endpoints', []))}"
             for t in trials if t)
+        def fv(v: Any) -> str:
+            if v in (None, "", []):
+                return "not reported"
+            return ", ".join(map(str, v)) if isinstance(v, list) else str(v)
+
         text = (f"{a.canonical_name} ({'internal asset' if a.is_internal else 'competitor asset'}; owner "
-                f"{comp.canonical_name if comp else 'n/a'}). Mechanism/target: {p.get('mechanism') or p.get('targets')}. "
-                f"Modality: {a.modality or p.get('modality')}. Stage: {a.stage or p.get('stage')}. Indication: "
-                f"{p.get('indications') or p.get('indication')}. Population/line: {p.get('population') or p.get('line_of_therapy')}. "
-                f"Biomarker: {p.get('biomarkers') or p.get('biomarker')}. Primary endpoint: {p.get('endpoint')}. "
-                f"Dosing: {p.get('dosing')}. Trials: {trial_txt or 'none linked'}.")
+                f"{comp.canonical_name if comp else 'not reported'}). Mechanism/target: {fv(p.get('mechanism') or p.get('targets'))}. "
+                f"Modality: {fv(a.modality or p.get('modality'))}. Stage: {fv(a.stage or p.get('stage'))}. Indication: "
+                f"{fv(p.get('indications') or p.get('indication'))}. Population/line: {fv(p.get('population') or p.get('line_of_therapy'))}. "
+                f"Biomarker: {fv(p.get('biomarkers') or p.get('biomarker'))}. Primary endpoint: {fv(p.get('endpoint'))}. "
+                f"Dosing: {fv(p.get('dosing'))}. Trials: {trial_txt or 'none linked'}.")
         t0 = next((t for t in trials if t and t.current_snapshot_id), None)
         snap = db.get(SourceSnapshot, t0.current_snapshot_id) if t0 else None
         doc = db.get(SourceDocument, snap.source_document_id) if snap else None
