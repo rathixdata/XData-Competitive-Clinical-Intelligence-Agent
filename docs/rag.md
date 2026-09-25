@@ -99,3 +99,17 @@ unanswerable and must abstain, and answerable ones that must not.
 - abstention accuracy, comparison warnings and temporal answers.
 
 It runs as a CI gate and must pass before any model, prompt or ranking promotion.
+
+## 8. Explainability (XAI)
+
+Explainability follows the four principles of NIST IR 8312 and is implemented in `app/ai/explain.py`:
+
+| Principle | How it is met |
+|---|---|
+| **Explanation** | Every event has a "Why am I seeing this?" section (`GET /events/{id}/explanation`, also inlined in the event detail) showing score drivers with their reasons, the mapping path and shared dimensions, evidence coverage, and generation provenance. Every Ask answer has a step-by-step trace of how it was produced. |
+| **Meaningful** | A plain-language summary comes first ("Scored 93/100 (Executive Alert). The biggest factor was …"), followed by the full technical breakdown for analysts. |
+| **Explanation accuracy** | Explanations are computed from the *same* deterministic values that produced the output: score components, proximity dimensions and validator verdicts. The LLM never generates them after the fact. `tests/test_explainability.py` recomputes the score from the explained drivers and checks that it matches. |
+| **Knowledge limits** | Always shown: unknowns, withheld claims, stale or failing sources, low mapping confidence, degraded model mode, the fact that confidence labels are not calibrated probabilities, and indirect comparisons. |
+
+- **Counterfactuals:** the points needed to move up or down a band, the effect of the magnitude gate, and a per-dimension sensitivity analysis. Together these let an analyst contest a score.
+- **Transparency card:** `GET /auth/ai-transparency` and the "AI transparency" screen describe the purpose, uses the system is not intended for, each component's type and model, human-oversight controls, data sources, the no-training-on-customer-data policy, known limitations, the evaluation gate and prompt versions.

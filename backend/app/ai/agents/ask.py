@@ -22,6 +22,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.ai.agents.impact import describe_change, object_label
+from app.ai.explain import explain_answer
 from app.ai.llm import LLMService
 from app.ai.prompts import load_prompt
 from app.ai.statements import STATEMENT_SCHEMA, Statement
@@ -70,7 +71,7 @@ ANSWER_SCHEMA: dict[str, Any] = {
 }
 
 _REFERENT = re.compile(r"\b(those|these|them|they|their|it|its|that asset|those competitors|same)\b", re.I)
-_COMPARE = re.compile(r"\b(compare|comparison|versus|vs\.?|differ|difference|side[- ]by[- ]side|against)\b", re.I)
+_COMPARE = re.compile(r"\b(compare|comparison|compared|versus|vs\.?|differ\w*|side[- ]by[- ]side|against|better|worse|superior|inferior|outperform\w*|beat|stronger|weaker|best-in-class)\b", re.I)
 _TIMELINE = re.compile(r"\b(timeline|readout|completion|catalyst|when|date|delay|moved|slip)\w*", re.I)
 _NCT = re.compile(r"\bNCT\d{8}\b", re.I)
 
@@ -149,7 +150,7 @@ def plan_query(db: Session, tenant_id: uuid.UUID, question: str, session: AskSes
     plan.temporal = plan.since is not None or bool(re.search(r"\bchang|moved|updat|new\b", question, re.I))
     plan.comparison = bool(_COMPARE.search(question))
     plan.timeline = bool(_TIMELINE.search(question))
-    qn = f" {normalize_alias(question)} "
+    qn = f" {normalize_alias(re.sub(r'[?!,;]', ' ', question))} "
     scope = landscape_entities(db, tenant_id, landscape_id)
     found: dict[uuid.UUID, str] = {}
     if scope:
@@ -245,7 +246,7 @@ def _change_records(db: Session, tenant_id: uuid.UUID, landscape_id: uuid.UUID |
                 source_document_id=str(doc.id) if doc else None, snapshot_id=str(snap.id) if snap else None,
                 object_type=ch.object_type, object_id=str(ch.object_id), uri=doc.uri if doc else None,
                 title=e.title, section=ch.field, field_path=ch.field, retrieved_at=ch.source_fetched_at,
-                published_at=ch.detected_at))
+                published_at=ch.detected_at, rights=doc.rights if doc else {}))
     return out
 
 
@@ -384,6 +385,8 @@ def ask(db: Session, *, tenant_id: uuid.UUID, user_id: uuid.UUID, question: str,
         "model_workflow_version": res.model_workflow_version,
         "validation": report.summary(),
     }
+    content["explanation"] = explain_answer(content, {"structured": len(structured), "changes": len(changes),
+                                                       "passages": len(passages)}, res.served_model, res.degraded)
     art = GeneratedArtifact(tenant_id=tenant_id, kind="ask_answer", content=content, generation_id=res.generation_id,
                             validation_generation_id=report.judge_generation_id, validation=report.summary(),
                             publishable=report.publishable or abstained, model_workflow_version=res.model_workflow_version,

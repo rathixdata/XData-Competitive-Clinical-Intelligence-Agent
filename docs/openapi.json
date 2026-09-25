@@ -75,6 +75,36 @@
     ]
    }
   },
+  "/api/v1/auth/ai-transparency": {
+   "get": {
+    "tags": [
+     "auth",
+     "ai"
+    ],
+    "summary": "Ai Transparency",
+    "description": "AI transparency / model card: purpose, components, oversight, limits, evaluation (XAI).",
+    "operationId": "ai_transparency_api_v1_auth_ai_transparency_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Ai Transparency Api V1 Auth Ai Transparency Get"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
   "/api/v1/auth/api-keys": {
    "get": {
     "tags": [
@@ -3559,6 +3589,57 @@
     }
    }
   },
+  "/api/v1/events/{event_id}/explanation": {
+   "get": {
+    "tags": [
+     "events"
+    ],
+    "summary": "Explanation",
+    "description": "Why am I seeing this? (XAI: explanation, meaningful summary, counterfactuals, knowledge limits).",
+    "operationId": "explanation_api_v1_events__event_id__explanation_get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "event_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Event Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Explanation Api V1 Events  Event Id  Explanation Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/events/{event_id}/artifacts/{artifact_id}": {
    "get": {
     "tags": [
@@ -5273,6 +5354,57 @@
          "type": "object",
          "additionalProperties": true,
          "title": "Response Edit Report Api V1 Reports  Report Id  Patch"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/reports/{report_id}/submit": {
+   "post": {
+    "tags": [
+     "reports"
+    ],
+    "summary": "Submit",
+    "description": "Move a draft brief into review without editing it.",
+    "operationId": "submit_api_v1_reports__report_id__submit_post",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "report_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Report Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Submit Api V1 Reports  Report Id  Submit Post"
         }
        }
       }

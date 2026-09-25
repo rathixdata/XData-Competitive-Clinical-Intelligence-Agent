@@ -104,6 +104,17 @@ def edit_report(report_id: uuid.UUID, body: ReportEdit, p: Principal = Depends(r
     return {**row(r), "content": content}
 
 
+@router.post("/{report_id}/submit")
+def submit(report_id: uuid.UUID, p: Principal = Depends(require(Perm.REPORT_WRITE)), db: Session = Depends(get_db)) -> dict:
+    """Move a draft brief into review without editing it."""
+    r = _get(db, p, report_id)
+    if r.status != "draft":
+        raise ValidationFailed("only draft briefs can be submitted for review")
+    r.status = "in_review"
+    audit.record(db, action="report.submit", resource_type="report", resource_id=r.id, tenant_id=p.tenant_id, actor_id=p.actor)
+    return row(r)
+
+
 @router.post("/{report_id}/approve")
 def approve(report_id: uuid.UUID, p: Principal = Depends(require(Perm.REPORT_APPROVE)), db: Session = Depends(get_db)) -> dict:
     r = _get(db, p, report_id)

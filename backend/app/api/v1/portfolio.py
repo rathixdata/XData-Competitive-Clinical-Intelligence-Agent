@@ -143,7 +143,8 @@ def _comparison(db: Session, asset_ids: list[uuid.UUID]) -> dict:
                 "superiority or inferiority."]
     for col, label in (("primary_endpoints", "Primary endpoints"), ("population", "Populations / lines of therapy"),
                        ("phase", "Development phases"), ("biomarker", "Biomarker selection")):
-        vals = {str(r["cells"][col]["value"]) for r in rows_ if r["cells"].get(col, {}).get("value") is not None}
+        vals = {(", ".join(map(str, v)) if isinstance(v, list) else str(v)) for r in rows_
+                if (v := r["cells"].get(col, {}).get("value")) is not None}
         if len(vals) > 1:
             warnings.append(f"{label} differ across assets ({'; '.join(sorted(vals))[:300]}); values are not directly comparable.")
     return {"columns": MATRIX_COLUMNS, "rows": rows_, "context_warnings": warnings,

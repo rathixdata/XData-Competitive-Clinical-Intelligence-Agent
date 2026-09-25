@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.ai.explain import explain_event
 from app.api.deps import Page, get_db, page_params, paged, require
 from app.api.serialize import row, rows
 from app.core.errors import NotFound, ValidationFailed
@@ -182,7 +183,14 @@ def detail(event_id: uuid.UUID, p: Principal = Depends(require(Perm.EVENT_READ))
                                "model_workflow_version": a.model_workflow_version,
                                "fallback_used": (a.validation or {}).get("fallback_used", False)} for a in arts],
         "feedback": {"counts": counts, "mine": rows([f for f in fb if f.user_id == p.user_id])},
+        "explanation": explain_event(db, ev),
     }
+
+
+@router.get("/{event_id}/explanation")
+def explanation(event_id: uuid.UUID, p: Principal = Depends(require(Perm.EVENT_READ)), db: Session = Depends(get_db)) -> dict:
+    """Why am I seeing this? (XAI: explanation, meaningful summary, counterfactuals, knowledge limits)."""
+    return explain_event(db, _get(db, p, event_id))
 
 
 @router.get("/{event_id}/artifacts/{artifact_id}")

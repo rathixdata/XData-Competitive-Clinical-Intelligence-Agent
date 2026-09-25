@@ -72,6 +72,14 @@ def me(principal: Principal = Depends(get_principal), db: Session = Depends(get_
     }
 
 
+@router.get("/ai-transparency", tags=["ai"])
+def ai_transparency(principal: Principal = Depends(get_principal)) -> dict:
+    """AI transparency / model card: purpose, components, oversight, limits, evaluation (XAI)."""
+    from app.ai.explain import transparency_card
+
+    return transparency_card()
+
+
 class ApiKeyIn(BaseModel):
     name: str = Field(..., max_length=100)
     roles: list[str] = Field(default_factory=list, description="Subset of the owner's roles; empty = all")

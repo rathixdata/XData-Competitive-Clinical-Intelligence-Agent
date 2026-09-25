@@ -50,9 +50,9 @@ validated against retained evidence before anyone sees it. See `docs/architectur
 | `backend/app/rag` | Chunking, embeddings (Voyage / offline hashing), indexer, hybrid retriever, evidence objects |
 | `backend/app/ai` | Claude client + governance, versioned prompts, Impact / Ask / Briefing agents, Evidence validator |
 | `backend/app/alerts`, `reports` | Alert policies, digests, delivery channels; DOCX/PDF/PPTX/Markdown exports |
-| `backend/app/api/v1` | FastAPI routers (120 operations, OpenAPI at `/api/v1/docs`) |
+| `backend/app/api/v1` | FastAPI routers (123 operations, OpenAPI at `/api/v1/docs`) |
 | `backend/alembic` | Migrations, including Postgres row-level security and the immutable audit log |
-| `backend/tests` | 88 tests: unit, contract, regression, E2E acceptance, security/isolation, RAG, AI safety |
+| `backend/tests` | 92 tests: unit, contract, regression, E2E acceptance, security/isolation, RAG, AI safety, explainability |
 | `evals/` | Golden evaluation suite; the release gate for model, prompt and ranking changes |
 | `frontend/` | React + TypeScript web app (all SRS §13 screens) |
 | `deploy/` | docker compose, Kubernetes (kustomize), Terraform (AWS), observability |

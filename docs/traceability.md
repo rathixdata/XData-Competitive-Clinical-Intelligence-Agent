@@ -129,3 +129,8 @@ recall 1.00, high-priority precision 1.00, attribution 1.00, unsupported facts 0
 abstention 1.00. **Caveat:** this golden set is illustrative. SRS §19.1 requires the customer's 3-6 month
 retrospective set before launch, and analyst time reduction and user-rated usefulness can only be measured during
 the pilot (`GET /kpis`).
+
+## Explainable AI (added requirement)
+| Item | Implementation | Verification | Status |
+|---|---|---|---|
+| NIST IR 8312 principles (explanation, meaningful, explanation accuracy, knowledge limits) | `app/ai/explain.py`; `GET /events/{id}/explanation`; Ask `explanation` trace; `GET /auth/ai-transparency`; UI "Why am I seeing this?" panel, answer trace, AI transparency page | `test_explainability.py` (recomputes the score from the explained drivers), `ExplanationPanel.test.tsx`, E2E smoke | Done |
