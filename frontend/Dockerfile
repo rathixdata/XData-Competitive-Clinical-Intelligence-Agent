@@ -17,7 +17,7 @@ RUN npm run build
 
 # ---- runtime ----------------------------------------------------------------
 # nginx-unprivileged runs as uid 101 and listens on 8080 (no root, no NET_BIND_SERVICE).
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.29-alpine AS runtime
 LABEL org.opencontainers.image.title="xdata-ci-web" \
       org.opencontainers.image.description="XData Competitive & Clinical Intelligence Agent - web UI"
 
