@@ -34,16 +34,16 @@ jobs:
       NS: ${{ vars.K8S_NAMESPACE }}
       TAG: ${{ inputs.image_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}   # e.g. arn:aws:iam::<acct>:role/xdata-<env>-github-deploy
           aws-region: ${{ vars.AWS_REGION }}
 
-      - uses: azure/setup-kubectl@v4
-      - uses: imranismail/setup-kustomize@v2
+      - uses: azure/setup-kubectl@v5
+      - uses: imranismail/setup-kustomize@v3
 
       - name: Kubeconfig
         run: aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER_NAME }}" --region "${{ vars.AWS_REGION }}"
