@@ -64,7 +64,7 @@ resource "aws_kms_alias" "secrets" {
 # -----------------------------------------------------------------------------
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.13"
+  version = "~> 6.7"
 
   name = local.name
   cidr = var.vpc_cidr
