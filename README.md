@@ -58,6 +58,11 @@ validated against retained evidence before anyone sees it. See `docs/architectur
 | `deploy/` | docker compose, Kubernetes (kustomize), Terraform (AWS), observability |
 | `docs/` | Architecture, RAG design, SRS traceability, security, runbook, OpenAPI |
 
+## Try it without installing anything
+
+A hosted, read-only demo replays real output of the pipeline in your browser: https://claude.ai/artifact/HUMam4kWWW1rdtQHf558wJ
+(access is controlled by the owner's Share settings). Build your own copy with `npm run build:demo`; see `frontend/demo/README.md`.
+
 ## Easiest ways to run it (no Docker needed)
 
 **Mac, one command.** Uses Homebrew to install PostgreSQL + pgvector, Redis, Python and Node:

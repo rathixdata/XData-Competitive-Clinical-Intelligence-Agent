@@ -15,7 +15,8 @@
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test -c e2e/playwright.config.ts"
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "build:demo": "vite build -c demo/vite.demo.config.ts && node demo/inline.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.2",

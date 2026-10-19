@@ -14,5 +14,5 @@
     "noUnusedParameters": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "e2e/**/*.ts"]
+  "include": ["vite.config.ts", "e2e/**/*.ts", "demo/*.spec.ts", "demo/*.config.ts"]
 }

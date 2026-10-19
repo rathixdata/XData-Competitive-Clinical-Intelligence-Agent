@@ -13,19 +13,21 @@ function safeNext(next: string | null): string {
   return next;
 }
 
+const DEMO = import.meta.env.VITE_DEMO === '1';
+
 export function LoginPage() {
   const { login, token } = useAuth();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [tenant, setTenant] = useState(() => {
     try {
-      return window.localStorage.getItem(TENANT_KEY) ?? '';
+      return window.localStorage.getItem(TENANT_KEY) ?? (DEMO ? 'demo-oncology' : '');
     } catch {
-      return '';
+      return DEMO ? 'demo-oncology' : '';
     }
   });
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(DEMO ? 'analyst@demo.example' : '');
+  const [password, setPassword] = useState(DEMO ? 'ChangeMe-Demo-2026!' : '');
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const next = safeNext(params.get('next'));
