@@ -143,3 +143,24 @@ def test_check_now_runs_in_the_background_in_single_service_mode(bootstrap_env, 
     assert r.status_code == 202 and r.json()["queued"] is True  # returned while the run is still going
     assert started.wait(5)
     release.set()
+
+
+def test_builtin_similarity_matches_pg_trgm() -> None:
+    """Embedded PostgreSQL builds without pg_trgm get a SQL similarity(); it must score exactly like pg_trgm."""
+    import importlib.util
+    import pathlib
+
+    path = pathlib.Path(__file__).parent.parent / "alembic" / "versions" / "0001_initial_schema.py"
+    spec = importlib.util.spec_from_file_location("m0001", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    sql = mod.TRIGRAM_SIMILARITY_SQL.replace("FUNCTION similarity(", "FUNCTION pg_temp.fb_similarity(") \
+        .replace("FUNCTION xdata_trigrams(", "FUNCTION pg_temp.fb_trigrams(").replace("xdata_trigrams(", "pg_temp.fb_trigrams(")
+    pairs = [("non small cell lung cancer", "nsclc lung cancer"), ("zelvatinib", "zelvatinb"), ("CA-201", "ca201"),
+             ("", ""), ("Competitor A Therapeutics", "competitor a therapeutic"), ("osimertinib", "osimertinib mesylate"),
+             ("A&B co.", "a b co"), ("aaa aaa", "aaa"), ("x", "y")]
+    with get_engine().connect() as c:
+        c.exec_driver_sql(sql)
+        for a, b in pairs:
+            ref, ours = c.execute(text("SELECT similarity(:a, :b), pg_temp.fb_similarity(:a, :b)"), {"a": a, "b": b}).one()
+            assert abs(ref - ours) < 1e-6, (a, b, ref, ours)

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../api/endpoints';
+import { ApiError } from '../api/client';
 import type { LandscapeDetail } from '../api/types';
 import { PERMS, useAuth } from '../auth/context';
 import { Modal } from './Dialog';
@@ -209,7 +210,11 @@ export function MonitoringEditor({ landscape }: { landscape: LandscapeDetail }) 
   });
   const run = useMutation({
     mutationFn: async () => {
-      for (const key of SEARCH_CONNECTORS) await api.runConnector(key);
+      // A source that is already being checked answers "in progress"; that is fine, so only fail if none started.
+      const results = await Promise.allSettled(SEARCH_CONNECTORS.map((key) => api.runConnector(key)));
+      const started = results.filter((r) => r.status === 'fulfilled').length;
+      const busy = results.filter((r) => r.status === 'rejected' && r.reason instanceof ApiError && r.reason.status === 409).length;
+      if (started + busy === 0) throw (results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason;
     },
     onSuccess: () => notify('Checking ClinicalTrials.gov, PubMed and FDA now. New changes appear in All changes within a few minutes.'),
     onError: (e) => notify(errorMessage(e), 'error'),

@@ -8,6 +8,7 @@ Revision ID: 0002
 Revises: 0001
 """
 
+import sqlalchemy as sa
 from alembic import op
 
 revision = "0002"
@@ -79,7 +80,8 @@ def upgrade() -> None:
         )
 
     # Trigram index for fuzzy alias lookups (FR-ENT-002)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_alias_norm_trgm ON entity_aliases USING gin (alias_norm gin_trgm_ops)")
+    if op.get_bind().execute(sa.text("SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'")).scalar():
+        op.execute("CREATE INDEX IF NOT EXISTS ix_alias_norm_trgm ON entity_aliases USING gin (alias_norm gin_trgm_ops)")
 
 
 def downgrade() -> None:

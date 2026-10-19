@@ -58,6 +58,17 @@ validated against retained evidence before anyone sees it. See `docs/architectur
 | `deploy/` | docker compose, Kubernetes (kustomize), Terraform (AWS), observability |
 | `docs/` | Architecture, RAG design, SRS traceability, security, runbook, OpenAPI |
 
+## Run it on your Mac: one command, nothing to install first
+
+Open Terminal, paste this line and press Return. It installs everything it needs into `~/XData-CI-Agent` (no Docker,
+Homebrew, Python or admin password needed), starts the full system with live data and opens it in your browser:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rathixdata/XData-Competitive-Clinical-Intelligence-Agent/refs/heads/claude/laughing-knuth-16lb2c/desktop/install-mac.sh | bash
+```
+
+Next time, double-click **Start XData CI Agent** on your Desktop. Details: `desktop/README.md`.
+
 ## Run the full system in the cloud (one click, nothing to install)
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rathixdata/XData-Competitive-Clinical-Intelligence-Agent)
