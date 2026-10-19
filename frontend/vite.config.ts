@@ -9,6 +9,9 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // GitHub Codespaces serves the dev server on *.app.github.dev (Vite 6 blocks unknown hosts by default).
+    allowedHosts: ['.app.github.dev'],
+    hmr: process.env.CODESPACES ? { clientPort: 443 } : undefined,
     proxy: {
       // SSE (/api/v1/ask/stream) flows through the same proxy; http-proxy streams chunked bodies.
       '/api': { target: apiTarget, changeOrigin: true },

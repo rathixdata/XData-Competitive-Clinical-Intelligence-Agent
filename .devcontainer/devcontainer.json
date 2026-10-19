@@ -1,0 +1,22 @@
+{
+  // GitHub Codespaces / VS Code Dev Containers: runs the whole app in the cloud, nothing to install locally.
+  // On GitHub: Code -> Codespaces -> "Create codespace on <branch>". The web app opens automatically.
+  "name": "XData CI Agent",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" }
+  },
+  "forwardPorts": [5173, 8000],
+  "portsAttributes": {
+    "5173": { "label": "XData web app", "onAutoForward": "openBrowser" },
+    "8000": { "label": "XData API", "onAutoForward": "silent" }
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postStartCommand": "(redis-server --daemonize yes >/dev/null 2>&1 || true) && bash scripts/dev-start.sh --background",
+  "hostRequirements": { "cpus": 2, "memory": "4gb" },
+  "customizations": {
+    "vscode": { "extensions": ["ms-python.python", "charliermarsh.ruff", "dbaeumer.vscode-eslint"] }
+  }
+}

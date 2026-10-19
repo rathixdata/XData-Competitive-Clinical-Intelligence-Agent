@@ -58,6 +58,27 @@ validated against retained evidence before anyone sees it. See `docs/architectur
 | `deploy/` | docker compose, Kubernetes (kustomize), Terraform (AWS), observability |
 | `docs/` | Architecture, RAG design, SRS traceability, security, runbook, OpenAPI |
 
+## Easiest ways to run it (no Docker needed)
+
+**Mac, one command.** Uses Homebrew to install PostgreSQL + pgvector, Redis, Python and Node:
+
+```bash
+git clone https://github.com/rathixdata/XData-Competitive-Clinical-Intelligence-Agent.git
+cd XData-Competitive-Clinical-Intelligence-Agent
+git checkout claude/laughing-knuth-16lb2c
+bash scripts/run-mac.sh
+```
+
+The browser opens http://localhost:5173. Log in with tenant `demo-oncology`, user `analyst@demo.example`,
+password `ChangeMe-Demo-2026!`. Press Ctrl-C to stop; run `bash scripts/run-mac.sh` again to restart (your data is kept).
+
+**In the browser, nothing installed.** On GitHub, open the repository, switch to this branch, then click
+**Code → Codespaces → Create codespace on claude/laughing-knuth-16lb2c**. Setup takes about 3-5 minutes, then the app
+opens in a new tab with the same login.
+
+**Linux, or a Mac with PostgreSQL already installed:** `bash scripts/dev-setup.sh && bash scripts/dev-start.sh`
+(set `PSQL_SUPER` to a superuser connection string if it isn't the default local socket).
+
 ## Quick start (local, no API keys needed)
 
 Requirements: Docker with compose, or Python 3.11 + PostgreSQL 16 with pgvector + Redis 7.
