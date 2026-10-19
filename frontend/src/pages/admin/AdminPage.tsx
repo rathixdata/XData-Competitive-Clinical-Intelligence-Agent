@@ -13,20 +13,75 @@ import { KpisTab, TuningTab } from './TuningTabs';
 interface TabSpec {
   id: string;
   label: string;
+  description: string;
   perms: string[];
   render: () => ReactNode;
 }
 
 const TABS: TabSpec[] = [
-  { id: 'connectors', label: 'Connectors', perms: [PERMS.sourceRead], render: () => <ConnectorsTab /> },
-  { id: 'users', label: 'Users & roles', perms: [PERMS.userAdmin], render: () => <UsersTab /> },
-  { id: 'proximity', label: 'Proximity rules', perms: [PERMS.configAdmin], render: () => <ProximityTab /> },
-  { id: 'models', label: 'Models & workflows', perms: [PERMS.configAdmin], render: () => <ModelsTab /> },
-  { id: 'settings', label: 'Settings', perms: [PERMS.configAdmin], render: () => <SettingsTab /> },
-  { id: 'usage', label: 'Usage', perms: [PERMS.configAdmin], render: () => <UsageTab /> },
-  { id: 'audit', label: 'Audit log', perms: [PERMS.auditRead], render: () => <AuditTab /> },
-  { id: 'tuning', label: 'Feedback tuning', perms: [PERMS.trainingCurate], render: () => <TuningTab /> },
-  { id: 'kpis', label: 'KPIs', perms: ['report:read'], render: () => <KpisTab /> },
+  {
+    id: 'connectors',
+    label: 'Data sources',
+    description: 'The public sources we check for changes (trial registries, PubMed, FDA, SEC...), when each was last updated, and whether any are failing.',
+    perms: [PERMS.sourceRead],
+    render: () => <ConnectorsTab />,
+  },
+  {
+    id: 'users',
+    label: 'Users & access',
+    description: 'Invite colleagues and choose what each person is allowed to see and do.',
+    perms: [PERMS.userAdmin],
+    render: () => <UsersTab />,
+  },
+  {
+    id: 'proximity',
+    label: 'Drug similarity rules',
+    description: 'Rules that decide how "close" a competitor is to your drug (shared target, disease, patients...). This drives the "How close to your drug" percentage.',
+    perms: [PERMS.configAdmin],
+    render: () => <ProximityTab />,
+  },
+  {
+    id: 'models',
+    label: 'AI models',
+    description: 'Which AI models and instruction versions are used, and how often they ran.',
+    perms: [PERMS.configAdmin],
+    render: () => <ModelsTab />,
+  },
+  {
+    id: 'settings',
+    label: 'Budget & data retention',
+    description: 'Monthly AI spending limit and how long different kinds of data are kept.',
+    perms: [PERMS.configAdmin],
+    render: () => <SettingsTab />,
+  },
+  {
+    id: 'usage',
+    label: 'AI usage & cost',
+    description: 'How much AI processing was used and what it cost, against your budget.',
+    perms: [PERMS.configAdmin],
+    render: () => <UsageTab />,
+  },
+  {
+    id: 'audit',
+    label: 'Activity log',
+    description: 'A tamper-proof record of who did what and when (reviews, edits, approvals, settings changes).',
+    perms: [PERMS.auditRead],
+    render: () => <AuditTab />,
+  },
+  {
+    id: 'tuning',
+    label: 'Improve from feedback',
+    description: 'Use analysts\' "useful / not useful" feedback to suggest better priority thresholds. Nothing changes automatically.',
+    perms: [PERMS.trainingCurate],
+    render: () => <TuningTab />,
+  },
+  {
+    id: 'kpis',
+    label: 'Quality metrics',
+    description: 'How well the system is performing: evidence coverage, alert precision, speed from source to alert.',
+    perms: ['report:read'],
+    render: () => <KpisTab />,
+  },
 ];
 
 export function AdminPage() {
@@ -37,7 +92,7 @@ export function AdminPage() {
   if (visible.length === 0) {
     return (
       <div className="card">
-        <EmptyState title="You do not have access to administration" />
+        <EmptyState title="You don't have access to settings">Ask an administrator if you need to manage data sources, users or rules.</EmptyState>
       </div>
     );
   }
@@ -47,11 +102,12 @@ export function AdminPage() {
     <>
       <div className="page-header">
         <div>
-          <h1>Administration</h1>
-          <p>Sections are shown according to your permissions; the server enforces every action.</p>
+          <h1>Settings &amp; data sources</h1>
+          <p>Check that data sources are up to date and manage users, rules and AI settings. You only see the sections your role allows.</p>
         </div>
       </div>
-      <Tabs label="Administration sections" active={active.id} onChange={(id) => navigate(`/admin/${id}`)} tabs={visible.map((t) => ({ id: t.id, label: t.label }))} />
+      <Tabs label="Settings sections" active={active.id} onChange={(id) => navigate(`/admin/${id}`)} tabs={visible.map((t) => ({ id: t.id, label: t.label }))} />
+      <p className="small muted tab-intro">{active.description}</p>
       <div role="tabpanel" id={`panel-${active.id}`} aria-labelledby={`tab-${active.id}`}>
         {active.render()}
       </div>

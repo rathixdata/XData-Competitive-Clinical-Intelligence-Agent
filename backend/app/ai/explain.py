@@ -81,7 +81,7 @@ def explain_event(db: Session, ev: IntelligenceEvent) -> dict[str, Any]:
     if impacts:
         m = impacts[0]
         summary_parts.append(f"It maps to {m['asset_name']} because they {m['detail'].get('rationale', 'share attributes')}"
-                             f" (proximity {m['proximity']:.2f}).")
+                             f" ({m['proximity']:.0%} similar).")
     else:
         summary_parts.append("It was not mapped to any of your internal assets.")
     summary_parts.append(f"{len(facts)} factual statement(s) are each backed by retained source evidence"

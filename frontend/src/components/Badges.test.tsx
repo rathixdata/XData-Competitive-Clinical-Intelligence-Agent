@@ -32,8 +32,8 @@ describe('other semantic badges', () => {
         <BasisBadge basis="INFERRED" />
       </>,
     );
-    expect(screen.getByText('Sourced')).toBeInTheDocument();
-    expect(screen.getByText('Inferred')).toBeInTheDocument();
+    expect(screen.getByText('Reported date')).toBeInTheDocument();
+    expect(screen.getByText('Estimated')).toBeInTheDocument();
   });
 
   it('marks human-reviewed and human-edited output', () => {

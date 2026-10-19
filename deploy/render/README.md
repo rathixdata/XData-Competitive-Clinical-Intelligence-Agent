@@ -18,7 +18,7 @@ detection, importance scoring, impact mapping, evidence-checked AI summaries, As
    - `XDATA_NCBI_EMAIL` and `XDATA_SEC_USER_AGENT` (optional): leave empty to use your admin email.
 3. Click **Apply**. The first build takes about 5-10 minutes.
 4. Open the URL Render shows (like `https://xdata-ci-agent-xxxx.onrender.com`) and sign in with:
-   - Workspace: `my-company`
+   - Organisation workspace: `my-company`
    - Email and password: the ones you entered in step 2.
 
 Within a few minutes of the first start the app pulls live records. Recently registered NSCLC trials and new

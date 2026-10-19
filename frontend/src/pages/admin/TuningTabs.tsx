@@ -54,7 +54,7 @@ export function TuningTab() {
   const promote = useMutation({
     mutationFn: (id: string) => api.promoteRelease(id),
     onSuccess: () => {
-      notify('Release promoted; landscape thresholds updated');
+      notify('Release promoted; priority thresholds updated');
       void qc.invalidateQueries({ queryKey: ['releases'] });
       void qc.invalidateQueries({ queryKey: ['tuning'] });
       void qc.invalidateQueries({ queryKey: ['landscapes'] });
@@ -65,7 +65,7 @@ export function TuningTab() {
     <div className="stack" style={{ gap: 16 }}>
       <section className="card" aria-labelledby="ts-h">
         <h2 id="ts-h">Threshold suggestions for {landscape?.name ?? 'the selected landscape'}</h2>
-        <p className="small muted">Suggestions come from analyst feedback labels (Material / Useful vs Not material / Not useful). Suggestions never apply automatically.</p>
+        <p className="small muted">Suggestions are based on analysts&rsquo; feedback on changes (&ldquo;Material / Useful&rdquo; vs &ldquo;Not material / Not useful&rdquo;). Nothing is changed until you approve it.</p>
         <QueryView query={tuning}>
           {(t) => (
             <div className="grid grid-2">
@@ -102,7 +102,7 @@ export function TuningTab() {
         </QueryView>
       </section>
       <section className="card" aria-labelledby="ds-h">
-        <h2 id="ds-h">Training datasets (frozen feedback snapshots)</h2>
+        <h2 id="ds-h">Feedback snapshots (for testing new thresholds)</h2>
         <form
           className="form-grid"
           onSubmit={(e) => {
@@ -121,7 +121,7 @@ export function TuningTab() {
           </div>
         </form>
         <InlineError error={createDs.error} />
-        <QueryView query={datasets} isEmpty={(d) => d.length === 0} empty={<EmptyState title="No datasets yet" />}>
+        <QueryView query={datasets} isEmpty={(d) => d.length === 0} empty={<EmptyState title="No snapshots yet">Save a snapshot of the current feedback to test new thresholds against it.</EmptyState>}>
           {(ds) => (
             <ul className="list-plain">
               {ds.map((d) => (
@@ -139,7 +139,7 @@ export function TuningTab() {
         </QueryView>
       </section>
       <section className="card" aria-labelledby="rel-h">
-        <h2 id="rel-h">Model releases (materiality thresholds)</h2>
+        <h2 id="rel-h">Threshold releases (priority levels)</h2>
         <form
           className="form-grid"
           onSubmit={(e) => {
@@ -148,7 +148,7 @@ export function TuningTab() {
           }}
         >
           <div className="field">
-            <label htmlFor="rel-ds">Evaluation dataset</label>
+            <label htmlFor="rel-ds">Feedback snapshot to test against</label>
             <select id="rel-ds" required value={relDataset} onChange={(e) => setRelDataset(e.target.value)}>
               <option value="">Select...</option>
               {(datasets.data ?? []).map((d) => (
@@ -169,7 +169,7 @@ export function TuningTab() {
           </div>
         </form>
         <InlineError error={createRel.error} />
-        <QueryView query={releases} isEmpty={(d) => d.length === 0} empty={<EmptyState title="No releases yet" />}>
+        <QueryView query={releases} isEmpty={(d) => d.length === 0} empty={<EmptyState title="No releases yet">Create a candidate release from a feedback snapshot; it is tested before you promote it.</EmptyState>}>
           {(rs) => (
             <div className="table-wrap">
               <table className="table">
@@ -221,7 +221,7 @@ export function KpisTab() {
   return (
     <div className="stack">
       <div className="field" style={{ maxWidth: 200 }}>
-        <label htmlFor="kpi-days">Window</label>
+        <label htmlFor="kpi-days">Period</label>
         <select id="kpi-days" value={days} onChange={(e) => setDays(Number(e.target.value))}>
           {[30, 90, 180, 365].map((d) => (
             <option key={d} value={d}>
@@ -234,33 +234,33 @@ export function KpisTab() {
         {(k) => {
           const tiles: { label: string; value: string; target?: string; ok?: boolean | null }[] = [
             {
-              label: 'Source attribution rate (facts with evidence)',
+              label: 'Facts that cite a source',
               value: pct(k.source_attribution_rate, 1),
               target: pct(k.targets.source_attribution_rate),
               ok: k.source_attribution_rate === null ? null : k.source_attribution_rate >= k.targets.source_attribution_rate,
             },
             {
-              label: 'High-priority precision',
+              label: 'High-priority alerts rated useful (precision)',
               value: pct(k.high_priority_precision, 1),
               target: pct(k.targets.high_priority_precision),
               ok: k.high_priority_precision === null ? null : k.high_priority_precision >= k.targets.high_priority_precision,
             },
             {
-              label: 'Useful alert rate',
+              label: 'Alerts rated useful',
               value: pct(k.useful_alert_rate, 1),
               target: pct(k.targets.useful_alert_rate),
               ok: k.useful_alert_rate === null ? null : k.useful_alert_rate >= k.targets.useful_alert_rate,
             },
             {
-              label: 'Median fetch-to-publish (minutes)',
+              label: 'Typical time from source update to alert (minutes)',
               value: k.median_fetch_to_publish_minutes === null ? '-' : String(k.median_fetch_to_publish_minutes),
               target: `<= ${k.targets.alert_latency_minutes}`,
               ok: k.median_fetch_to_publish_minutes === null ? null : k.median_fetch_to_publish_minutes <= k.targets.alert_latency_minutes,
             },
-            { label: 'p95 fetch-to-publish (minutes)', value: k.p95_fetch_to_publish_minutes === null ? '-' : String(k.p95_fetch_to_publish_minutes) },
-            { label: 'Events in window', value: String(k.events) },
-            { label: 'Blocked publications', value: String(k.blocked_publications) },
-            { label: 'Feedback records', value: String(k.feedback_count) },
+            { label: 'Slowest 5%: source update to alert (minutes)', value: k.p95_fetch_to_publish_minutes === null ? '-' : String(k.p95_fetch_to_publish_minutes) },
+            { label: 'Changes detected in period', value: String(k.events) },
+            { label: 'Summaries held back by evidence checks', value: String(k.blocked_publications) },
+            { label: 'Feedback ratings received', value: String(k.feedback_count) },
           ];
           return (
             <div className="stack">
@@ -285,7 +285,7 @@ export function KpisTab() {
                 ))}
               </div>
               <section className="card" aria-labelledby="kb-h">
-                <h2 id="kb-h">Events by band</h2>
+                <h2 id="kb-h">Changes by priority</h2>
                 <ul className="row list-plain">
                   {BANDS.map((b) => (
                     <li key={b} style={{ border: 0, padding: 0 }}>

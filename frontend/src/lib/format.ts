@@ -48,6 +48,7 @@ export function fmtValue(v: unknown): string {
   if (typeof v === 'object') {
     const o = v as Record<string, unknown>;
     if ('measure' in o) return String(o.measure);
+    if ('title' in o && 'date' in o) return `${fmtDate(String(o.date))}: ${String(o.title)}${o.basis === 'INFERRED' ? ' (estimated)' : ''}`;
     if ('value' in o && Object.keys(o).length <= 3) return fmtValue(o.value);
     return Object.entries(o)
       .map(([k, x]) => `${k}: ${fmtValue(x)}`)

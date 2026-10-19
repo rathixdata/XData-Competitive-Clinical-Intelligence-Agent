@@ -13,6 +13,7 @@ import { StatementCard, StatementLegend } from '../components/Statement';
 import { ErrorState, Loading } from '../components/States';
 import { useLandscape } from '../state/landscapeContext';
 import { fmtDateTime, fmtRelative } from '../lib/format';
+import { sourceLabel } from '../lib/labels';
 import { errorMessage } from '../lib/toastContext';
 import { AnswerTrace } from '../components/ExplanationPanel';
 
@@ -29,19 +30,24 @@ interface Turn {
 }
 
 const STAGES: { id: AskStage; label: string }[] = [
-  { id: 'planned', label: 'Planning' },
-  { id: 'retrieved', label: 'Retrieving evidence' },
-  { id: 'generated', label: 'Generating' },
+  { id: 'planned', label: 'Understanding the question' },
+  { id: 'retrieved', label: 'Finding evidence' },
+  { id: 'generated', label: 'Writing the answer' },
   { id: 'validated', label: 'Validating against evidence' },
 ];
 
-const SUGGESTIONS = ['What changed this week?', 'Which competitor trials changed their primary endpoint?', 'Compare CA-201 and BRV-310', 'What catalysts are expected in the next 6 months?'];
+const SUGGESTIONS = [
+  'What changed this week?',
+  'Which competitor trials changed their primary endpoint?',
+  'Compare CA-201 and BRV-310',
+  'What milestones are expected in the next 6 months?',
+];
 
 function stageDetail(p: AskProgress): string {
-  if (p.stage === 'retrieved') return `${String(p.passages ?? 0)} passages, ${String(p.changes ?? 0)} changes, ${String(p.structured ?? 0)} records`;
+  if (p.stage === 'retrieved') return `${String(p.passages ?? 0)} text passages, ${String(p.changes ?? 0)} changes, ${String(p.structured ?? 0)} records`;
   if (p.stage === 'validated' && p.counts && typeof p.counts === 'object') {
     const c = p.counts as Record<string, number>;
-    return `${c.supported ?? 0} supported, ${c.unsupported ?? 0} unsupported`;
+    return `${c.supported ?? 0} facts confirmed, ${c.unsupported ?? 0} not confirmed`;
   }
   if (p.stage === 'generated' && p.model) return String(p.model);
   return '';
@@ -78,7 +84,8 @@ function AnswerView({ answer, artifactId, onOpenEvidence }: { answer: AnswerCont
         <div className="banner banner-warning" role="note">
           <CircleSlash size={18} aria-hidden />
           <p>
-            <strong>Abstained:</strong> the retained evidence was insufficient for a verified answer. Nothing below should be read as a finding.
+            <strong>I don&rsquo;t know:</strong> the sources we hold don&rsquo;t contain enough evidence for a verified answer, so the assistant did not guess. Nothing below
+            should be read as a finding. Try rephrasing, or ask about a specific drug, trial or company.
           </p>
         </div>
       ) : null}
@@ -99,7 +106,7 @@ function AnswerView({ answer, artifactId, onOpenEvidence }: { answer: AnswerCont
       </section>
       {facts.length ? (
         <section aria-label="Evidence" className="stack-sm">
-          <h3 style={{ margin: 0 }}>Evidence</h3>
+          <h3 style={{ margin: 0 }}>Supporting facts</h3>
           <StatementLegend />
           {facts.map((s, i) => (
             <StatementCard key={i} statement={s} evidence={answer.evidence} onOpenEvidence={onOpenEvidence} />
@@ -108,7 +115,7 @@ function AnswerView({ answer, artifactId, onOpenEvidence }: { answer: AnswerCont
       ) : null}
       {other.length ? (
         <section aria-label="Interpretation and unknowns" className="stack-sm">
-          <h3 style={{ margin: 0 }}>Interpretation, unknowns and follow-ups</h3>
+          <h3 style={{ margin: 0 }}>What it may mean, open questions and next steps</h3>
           {other.map((s, i) => (
             <StatementCard key={i} statement={s} evidence={answer.evidence} onOpenEvidence={onOpenEvidence} />
           ))}
@@ -116,7 +123,7 @@ function AnswerView({ answer, artifactId, onOpenEvidence }: { answer: AnswerCont
       ) : null}
       {answer.limitations?.length ? (
         <section aria-label="Limitations">
-          <h3>Limitations</h3>
+          <h3>Limits of this answer</h3>
           <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
             {answer.limitations.map((l) => (
               <li key={l}>{l}</li>
@@ -127,8 +134,8 @@ function AnswerView({ answer, artifactId, onOpenEvidence }: { answer: AnswerCont
       {answer.explanation ? <AnswerTrace x={answer.explanation} /> : null}
       <div className="row-between">
         <div className="row">
-          <button type="button" className="btn btn-sm" onClick={() => setSourcesOpen(true)} disabled={evidence.length === 0}>
-            <BookOpenCheck size={14} aria-hidden /> Sources ({answer.sources?.length ?? 0})
+          <button type="button" className="btn btn-sm" onClick={() => setSourcesOpen(true)} disabled={evidence.length === 0} title="List every source this answer used">
+            <BookOpenCheck size={14} aria-hidden /> Sources used ({answer.sources?.length ?? 0})
           </button>
           <span className="tiny muted">
             {answer.model_workflow_version} - {fmtDateTime(answer.generated_at)}
@@ -136,16 +143,16 @@ function AnswerView({ answer, artifactId, onOpenEvidence }: { answer: AnswerCont
         </div>
         {artifactId ? <ExportButtons label="Export answer" onExport={(f) => api.askExport(artifactId, f)} /> : null}
       </div>
-      <Drawer open={sourcesOpen} onClose={() => setSourcesOpen(false)} title="Sources">
+      <Drawer open={sourcesOpen} onClose={() => setSourcesOpen(false)} title="Sources used">
         <ul className="list-plain">
           {evidence.map((e) => (
             <li key={e.evidence_id} className="stack-sm">
               <div className="row">
                 <span className="badge badge-neutral">{e.evidence_id}</span>
-                <strong>{e.title ?? e.source_type}</strong>
+                <strong>{e.title ?? sourceLabel(e.source_type)}</strong>
               </div>
               <span className="small muted">
-                {e.source_type} - retrieved {fmtDateTime(e.retrieved_at)}
+                {sourceLabel(e.source_type)} - retrieved {fmtDateTime(e.retrieved_at)}
               </span>
               <button
                 type="button"
@@ -235,7 +242,7 @@ export function AskPage() {
       );
       const { session_id, turn_id, artifact_id, ...content } = out;
       setTurns((ts) => ts.map((t) => (t.key === key ? { ...t, key: turn_id, pending: false, artifactId: artifact_id, answer: content } : t)));
-      setLive(out.abstained ? 'Answer ready: the assistant abstained due to insufficient evidence.' : `Answer ready. ${out.answer}`);
+      setLive(out.abstained ? 'Answer ready: not enough evidence to answer, so the assistant did not guess.' : `Answer ready. ${out.answer}`);
       void qc.invalidateQueries({ queryKey: ['ask-sessions'] });
       if (session_id !== sessionId) {
         assignedSession.current = session_id;
@@ -266,10 +273,13 @@ export function AskPage() {
     <>
       <div className="page-header">
         <div>
-          <h1>Ask the landscape</h1>
-          <p>Grounded answers from retained evidence. Follow-up questions keep the conversation context.</p>
+          <h1>Ask a question</h1>
+          <p>
+            Ask about competitors, trials, endpoints or timelines in plain English. Every answer cites the sources it used, and says &ldquo;I don&rsquo;t know&rdquo; when the
+            evidence is missing instead of guessing. Follow-up questions keep the context.
+          </p>
         </div>
-        <Link to="/ask" className="btn" onClick={() => setTurns([])}>
+        <Link to="/ask" className="btn" onClick={() => setTurns([])} title="Start a fresh conversation without the previous context">
           <MessageSquarePlus size={15} aria-hidden /> New conversation
         </Link>
       </div>
@@ -282,7 +292,10 @@ export function AskPage() {
           {session.error ? <ErrorState error={session.error} /> : null}
           {turns.length === 0 && !session.isLoading ? (
             <div className="card stack-sm">
-              <h2>Try asking</h2>
+              <h2>Not sure where to start? Try one of these</h2>
+              <p className="small muted" style={{ margin: 0 }}>
+                Click an example to ask it, or type your own question below.
+              </p>
               <div className="row">
                 {SUGGESTIONS.map((s) => (
                   <button key={s} type="button" className="btn btn-sm btn-wrap" onClick={() => void ask(s)} disabled={busy}>
@@ -318,7 +331,8 @@ export function AskPage() {
               <textarea
                 id="ask-q"
                 value={question}
-                placeholder="Ask about competitors, trials, endpoints, timelines..."
+                placeholder="e.g. Which competitor trials changed their primary endpoint this month?"
+                aria-describedby="ask-help"
                 onChange={(e) => setQuestion(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -338,12 +352,16 @@ export function AskPage() {
               <Send size={15} aria-hidden /> Ask
             </button>
           </form>
+          <p id="ask-help" className="tiny muted" style={{ margin: '-4px 0 0' }}>
+            Press Enter to ask, Shift+Enter for a new line. Answers use only the data this product has collected (trial registries, publications, FDA and company
+            sources); they are not medical advice.
+          </p>
         </section>
         <aside aria-label="Previous conversations" className="card hide-sm" style={{ alignSelf: 'start' }}>
-          <h2>Conversations</h2>
+          <h2>Your previous conversations</h2>
           {sessions.isLoading ? <Loading /> : null}
-          {sessions.data?.length === 0 ? <p className="small muted">No previous conversations.</p> : null}
-          <ul className="list-plain">
+          {sessions.data?.length === 0 ? <p className="small muted">None yet. Questions you ask are saved here so you can come back to them.</p> : null}
+          <ul className="list-plain" style={{ maxHeight: 520, overflowY: 'auto' }}>
             {(sessions.data ?? []).map((s) => (
               <li key={s.id}>
                 <Link to={`/ask/${s.id}`} aria-current={s.id === sessionId ? 'page' : undefined} className={s.id === sessionId ? 'strong' : undefined}>

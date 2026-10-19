@@ -158,6 +158,8 @@ export const api = {
     ),
   assets: (q: { q?: string; internal?: boolean; limit?: number; offset?: number }) => request<Paged<Asset>>('/assets', { query: q }),
   asset: (id: string) => request<AssetDetail>(`/assets/${enc(id)}`),
+  createAsset: (body: { name: string; aliases?: string[]; modality?: string | null; stage?: string | null; profile: Record<string, unknown> }) =>
+    request<Asset>('/assets', { method: 'POST', body }),
   profileVersions: (id: string) => request<ProfileVersion[]>(`/assets/${enc(id)}/profile/versions`),
   profileFields: () => request<ProfileField[]>('/profile-fields'),
   patchProfile: (id: string, profile: Record<string, unknown>, reason?: string) =>

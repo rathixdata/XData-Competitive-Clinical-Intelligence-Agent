@@ -10,6 +10,7 @@ import { EmptyState, QueryView } from '../components/States';
 import { useLandscape } from '../state/landscapeContext';
 import { anchorDate, catalystDate, previousDate } from '../lib/catalyst';
 import { fmtValue, humanize, isoDay } from '../lib/format';
+import { eventTypeLabel } from '../lib/labels';
 
 type Mode = 'month' | 'quarter';
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -43,12 +44,12 @@ function CatalystChip({ c, onOpen }: { c: Catalyst; onOpen: (c: Catalyst) => voi
       type="button"
       className={`cal-item ${inferred ? 'inferred' : 'sourced'}`}
       onClick={() => onOpen(c)}
-      title={`${c.title} (${inferred ? 'model-inferred window' : 'sourced date'})`}
-      aria-label={`${c.title}. ${inferred ? 'Inferred window' : 'Sourced date'} ${catalystDate(c)}${c.changed ? ', date changed' : ''}`}
+      title={`${c.title} (${inferred ? 'estimated date' : 'reported date'})`}
+      aria-label={`${c.title}. ${inferred ? 'Estimated date' : 'Reported date'} ${catalystDate(c)}${c.changed ? ', date moved' : ''}`}
     >
-      {inferred ? 'Inferred: ' : 'Sourced: '}
-      {c.changed ? '(changed) ' : ''}
-      {c.asset_name ?? c.nct_id ?? ''} {humanize(c.event_type)}
+      {inferred ? 'Est.: ' : ''}
+      {c.changed ? '(moved) ' : ''}
+      {c.asset_name ?? c.nct_id ?? ''} {eventTypeLabel(c.event_type)}
     </button>
   );
 }
@@ -81,7 +82,7 @@ function MonthGrid({ start, items, onOpen }: { start: Date; items: Catalyst[]; o
             const inMonth = d.getMonth() === start.getMonth();
             const list = byDay.get(key) ?? [];
             return (
-              <div key={key} role="gridcell" className={`cal-cell ${inMonth ? '' : 'outside'} ${key === today ? 'today' : ''}`} aria-label={`${key}${list.length ? `, ${list.length} catalyst(s)` : ''}`}>
+              <div key={key} role="gridcell" className={`cal-cell ${inMonth ? '' : 'outside'} ${key === today ? 'today' : ''}`} aria-label={`${key}${list.length ? `, ${list.length} milestone(s)` : ''}`}>
                 <span className="cal-daynum">{d.getDate()}</span>
                 {list.map((c) => (
                   <CatalystChip key={c.id} c={c} onOpen={onOpen} />
@@ -107,7 +108,7 @@ function Agenda({ start, end, items, onOpen, columns }: { start: Date; end: Date
           <section key={key} className="card" aria-label={monthFmt.format(m)}>
             <h3>{monthFmt.format(m)}</h3>
             {list.length === 0 ? (
-              <p className="small muted">No catalysts.</p>
+              <p className="small muted">No milestones this month.</p>
             ) : (
               <ul className="list-plain">
                 {list.map((c) => (
@@ -163,15 +164,18 @@ export function CalendarPage() {
     <>
       <div className="page-header">
         <div>
-          <h1>Catalyst calendar</h1>
-          <p>Sourced dates are reported by a source record; inferred windows are model heuristics.</p>
+          <h1>Upcoming milestones</h1>
+          <p>
+            Key dates for drugs in this market: trial starts and completions, data readouts and regulatory decisions. &ldquo;Reported&rdquo; dates come from a registry, company
+            or regulator; &ldquo;Estimated&rdquo; dates are the system&rsquo;s best guess. Click any item for details.
+          </p>
         </div>
         <div className="seg" role="group" aria-label="Calendar view">
           <button type="button" aria-pressed={mode === 'month'} onClick={() => set({ mode: null })}>
             Month
           </button>
           <button type="button" aria-pressed={mode === 'quarter'} onClick={() => set({ mode: 'quarter' })}>
-            Quarter
+            Quarter (list)
           </button>
         </div>
       </div>
@@ -187,43 +191,43 @@ export function CalendarPage() {
             <button type="button" className="btn btn-icon" onClick={() => shift(1)} aria-label={`Next ${mode}`}>
               <ChevronRight size={16} aria-hidden />
             </button>
-            <button type="button" className="btn btn-sm" onClick={() => set({ at: null })}>
+            <button type="button" className="btn btn-sm" onClick={() => set({ at: null })} title="Jump back to the current month">
               Today
             </button>
           </div>
           <div className="row">
             <label htmlFor="cal-basis" className="small strong">
-              Date basis
+              Show
             </label>
-            <select id="cal-basis" style={{ width: 160 }} value={basis} onChange={(e) => set({ basis: e.target.value || null })}>
-              <option value="">Sourced and inferred</option>
-              <option value="SOURCED">Sourced only</option>
-              <option value="INFERRED">Inferred only</option>
+            <select id="cal-basis" style={{ width: 210 }} value={basis} onChange={(e) => set({ basis: e.target.value || null })}>
+              <option value="">Reported and estimated dates</option>
+              <option value="SOURCED">Reported dates only</option>
+              <option value="INFERRED">Estimated dates only</option>
             </select>
-            <label className="checkbox">
+            <label className="checkbox" title="Only dates that moved since we first saw them (often a sign of delays)">
               <input type="checkbox" checked={changedOnly} onChange={(e) => set({ changed: e.target.checked ? '1' : null })} />
-              Changed dates only
+              Only dates that moved
             </label>
           </div>
         </div>
         <div className="legend" style={{ marginTop: 10 }} aria-label="Legend">
-          <span>Legend:</span>
-          <BasisBadge basis="SOURCED" /> <span>{q.data?.legend?.SOURCED ?? 'Date reported by the source record'}</span>
-          <BasisBadge basis="INFERRED" /> <span>{q.data?.legend?.INFERRED ?? 'Model-inferred window (heuristic)'}</span>
-          <ChangedDateBadge previous={null} /> <span>Date moved; previous date shown</span>
+          <span className="strong">Key:</span>
+          <BasisBadge basis="SOURCED" /> <span>Published by a registry, company or regulator</span>
+          <BasisBadge basis="INFERRED" /> <span>Estimated by the system - treat as a hypothesis</span>
+          <ChangedDateBadge previous={null} /> <span>Date has moved; the earlier date is shown</span>
         </div>
       </div>
-      <QueryView query={q} loadingLabel="Loading catalysts">
+      <QueryView query={q} loadingLabel="Loading milestones">
         {(d) =>
           d.items.length === 0 ? (
             <div className="card">
-              <EmptyState title={`No catalysts in ${period.label}`}>Try another period or remove filters.</EmptyState>
+              <EmptyState title={`No milestones in ${period.label}`}>Use the arrows to look at another {mode}, or show both reported and estimated dates.</EmptyState>
             </div>
           ) : mode === 'month' ? (
             <div className="stack">
               <MonthGrid start={period.start} items={d.items} onOpen={setOpen} />
               <details className="card">
-                <summary>List view ({d.items.length} catalysts)</summary>
+                <summary>Show as a list ({d.items.length} milestones)</summary>
                 <Agenda start={period.start} end={period.end} items={d.items} onOpen={setOpen} columns={false} />
               </details>
             </div>
@@ -232,7 +236,7 @@ export function CalendarPage() {
           )
         }
       </QueryView>
-      <Modal open={Boolean(open)} onClose={() => setOpen(null)} title={open?.title ?? 'Catalyst'}>
+      <Modal open={Boolean(open)} onClose={() => setOpen(null)} title={open?.title ?? 'Milestone'}>
         {open ? (
           <div className="stack">
             <div className="row">
@@ -241,9 +245,9 @@ export function CalendarPage() {
               {open.changed ? <ChangedDateBadge previous={previousDate(open.previous)} /> : null}
             </div>
             <dl className="kv">
-              <dt>{open.date_basis === 'INFERRED' ? 'Inferred window' : 'Expected date'}</dt>
+              <dt>{open.date_basis === 'INFERRED' ? 'Estimated window' : 'Expected date'}</dt>
               <dd>
-                {catalystDate(open)} {open.date_precision ? `(precision: ${open.date_precision})` : ''}
+                {catalystDate(open)} {open.date_precision ? `(accurate to the ${open.date_precision})` : ''}
               </dd>
               {open.changed ? (
                 <>
@@ -251,11 +255,11 @@ export function CalendarPage() {
                   <dd>{previousDate(open.previous) ?? '-'}</dd>
                 </>
               ) : null}
-              <dt>Type</dt>
-              <dd>{humanize(open.event_type)}</dd>
+              <dt>Kind of milestone</dt>
+              <dd>{eventTypeLabel(open.event_type)}</dd>
               {open.asset_name ? (
                 <>
-                  <dt>Asset</dt>
+                  <dt>Drug</dt>
                   <dd>{open.asset_id ? <Link to={`/assets/${open.asset_id}`}>{open.asset_name}</Link> : open.asset_name}</dd>
                 </>
               ) : null}
@@ -277,7 +281,7 @@ export function CalendarPage() {
                 : null}
             </dl>
             {open.date_basis === 'INFERRED' ? (
-              <p className="small muted">This window is a model heuristic, not a company or registry disclosure. Treat it as a hypothesis.</p>
+              <p className="small muted">This date is the system&rsquo;s estimate, not something a company or registry has announced. Treat it as a hypothesis.</p>
             ) : null}
           </div>
         ) : null}

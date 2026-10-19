@@ -73,9 +73,9 @@ export function LoginPage() {
         <InlineError error={error} />
         <form className="stack" onSubmit={submit} noValidate={false}>
           <div className="field">
-            <label htmlFor="tenant">Tenant</label>
+            <label htmlFor="tenant">Organisation workspace</label>
             <input id="tenant" type="text" autoComplete="organization" required value={tenant} onChange={(e) => setTenant(e.target.value)} />
-            <span className="hint">Your organisation&apos;s workspace identifier, e.g. demo-oncology</span>
+            <span className="hint">The short name of your company&apos;s workspace, e.g. demo-oncology (ask your administrator if unsure)</span>
           </div>
           <div className="field">
             <label htmlFor="email">Email</label>

@@ -10,11 +10,13 @@ import { BandBadge, StaleBadge } from '../components/Badges';
 import { Modal } from '../components/Dialog';
 import { EntityPicker } from '../components/EntityPicker';
 import { GraphView } from '../components/GraphView';
+import { AddDrugButton, MonitoringEditor } from '../components/LandscapeSetup';
 import { ProvenanceCell } from '../components/Provenance';
 import { EmptyState, InlineError, QueryView } from '../components/States';
 import { Tabs } from '../components/Tabs';
 import { useLandscape } from '../state/landscapeContext';
 import { fmtValue, humanize } from '../lib/format';
+import { DIMENSION_LABELS, entityTypeLabel, roleLabel } from '../lib/labels';
 import { errorMessage, useToast } from '../lib/toastContext';
 
 function cellText(v: unknown): string {
@@ -41,8 +43,8 @@ function MatrixView({ matrix }: { matrix: Matrix }) {
       <div className="banner banner-indirect" role="note">
         <AlertTriangle size={18} aria-hidden />
         <p>
-          <strong>Indirect comparison:</strong> {matrix.note ?? 'Cross-trial attributes are shown side by side for context only; they do not establish superiority.'}{' '}
-          Hover or focus any value to see its source, snapshot and retrieval date.
+          <strong>Indirect comparison:</strong> {matrix.note ?? 'Values come from different trials and are shown side by side for context only; they do not show that one drug is better.'}{' '}
+          Hover over (or tab to) any value to see where it came from and when it was checked.
         </p>
       </div>
       <div className="form-grid" role="search" aria-label="Matrix filters">
@@ -56,7 +58,7 @@ function MatrixView({ matrix }: { matrix: Matrix }) {
           </select>
         </div>
         <div className="field">
-          <label htmlFor="mx-mech">Mechanism</label>
+          <label htmlFor="mx-mech">How it works (mechanism)</label>
           <select id="mx-mech" value={mechanism} onChange={(e) => setMechanism(e.target.value)}>
             <option value="">All mechanisms</option>
             {mechanisms.map((c) => (
@@ -65,22 +67,22 @@ function MatrixView({ matrix }: { matrix: Matrix }) {
           </select>
         </div>
         <div className="field">
-          <label htmlFor="mx-text">Indication / population / text</label>
+          <label htmlFor="mx-text">Search (disease, patients, endpoint...)</label>
           <input id="mx-text" type="search" value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. 1L, NSCLC, PFS" />
         </div>
         <p className="small muted" style={{ margin: 0 }}>
-          {rows.length} of {matrix.rows.length} assets
+          Showing {rows.length} of {matrix.rows.length} drugs
         </p>
       </div>
       {rows.length === 0 ? (
-        <EmptyState title="No assets match these filters" />
+        <EmptyState title="No drugs match these filters">Clear the company, mechanism or search filter to see all drugs.</EmptyState>
       ) : (
         <div className="table-wrap">
           <table className="table">
-            <caption className="sr-only">Landscape matrix; each value shows its provenance on hover or focus</caption>
+            <caption className="sr-only">Competitor comparison table; each value shows its source on hover or focus</caption>
             <thead>
               <tr>
-                <th scope="col">Asset</th>
+                <th scope="col">Drug</th>
                 {matrix.columns.map((c) => (
                   <th key={c} scope="col">
                     {humanize(c)}
@@ -94,7 +96,7 @@ function MatrixView({ matrix }: { matrix: Matrix }) {
                   <th scope="row" style={{ minWidth: 140 }}>
                     <Link to={`/assets/${r.asset_id}`}>{r.asset}</Link>
                     <div className="row" style={{ gap: 4, marginTop: 2 }}>
-                      {r.role === 'customer' ? <span className="badge badge-danger">Your asset</span> : <span className="badge badge-neutral">{r.role}</span>}
+                      {r.role === 'customer' ? <span className="badge badge-danger">Your drug</span> : <span className="badge badge-neutral">{roleLabel(r.role)}</span>}
                       {r.stale ? <StaleBadge /> : null}
                     </div>
                   </th>
@@ -103,14 +105,14 @@ function MatrixView({ matrix }: { matrix: Matrix }) {
                     if (!cell || cell.value === null || cell.value === undefined || cell.value === '') {
                       return (
                         <td key={c}>
-                          <span className="muted" title="Not reported by any retained source">
-                            Unknown
+                          <span className="muted" title="None of our sources report this value yet">
+                            Not reported
                           </span>
                         </td>
                       );
                     }
                     return (
-                      <td key={c} style={{ minWidth: 110 }}>
+                      <td key={c} style={{ minWidth: 110, maxWidth: c === 'next_milestone' ? 260 : 200 }}>
                         <ProvenanceCell provenance={cell.provenance}>{cellText(cell.value)}</ProvenanceCell>
                       </td>
                     );
@@ -126,7 +128,7 @@ function MatrixView({ matrix }: { matrix: Matrix }) {
 }
 
 const DIMENSIONS = ['R', 'C', 'P', 'T', 'N'];
-const DIM_LABEL: Record<string, string> = { R: 'Relevance', C: 'Change significance', P: 'Proximity', T: 'Timing', N: 'Novelty' };
+
 
 function ConfigView({ landscape }: { landscape: LandscapeDetail }) {
   const { can } = useAuth();
@@ -147,7 +149,7 @@ function ConfigView({ landscape }: { landscape: LandscapeDetail }) {
         reason: reason || undefined,
       }),
     onSuccess: () => {
-      notify('Thresholds saved (new landscape version)');
+      notify('Saved. New changes will be scored with these settings.');
       void qc.invalidateQueries({ queryKey: ['landscape', landscape.id] });
       void qc.invalidateQueries({ queryKey: ['landscapes'] });
     },
@@ -155,7 +157,7 @@ function ConfigView({ landscape }: { landscape: LandscapeDetail }) {
   const addMember = useMutation({
     mutationFn: (m: { entity_type: string; entity_id: string }) => api.addMembers(landscape.id, [{ ...m, role }]),
     onSuccess: (r) => {
-      notify(r.added ? 'Member added' : 'Already a member');
+      notify(r.added ? 'Added to this market' : 'Already in this market');
       void qc.invalidateQueries({ queryKey: ['landscape', landscape.id] });
       void qc.invalidateQueries({ queryKey: ['matrix', landscape.id] });
     },
@@ -164,7 +166,7 @@ function ConfigView({ landscape }: { landscape: LandscapeDetail }) {
   const removeMember = useMutation({
     mutationFn: (entityId: string) => api.removeMember(landscape.id, entityId),
     onSuccess: () => {
-      notify('Member removed');
+      notify('Removed from this market');
       void qc.invalidateQueries({ queryKey: ['landscape', landscape.id] });
       void qc.invalidateQueries({ queryKey: ['matrix', landscape.id] });
     },
@@ -174,9 +176,13 @@ function ConfigView({ landscape }: { landscape: LandscapeDetail }) {
   const canWrite = can(PERMS.landscapeWrite);
   return (
     <div className="grid grid-2">
+      <MonitoringEditor landscape={landscape} />
       <section className="card" aria-labelledby="thr-h">
-        <h2 id="thr-h">Materiality bands and weights</h2>
-        {!canConfig ? <p className="small muted">Read-only: changing thresholds requires the config:admin permission.</p> : null}
+        <h2 id="thr-h">Priority thresholds and score weights</h2>
+        <p className="small muted">
+          Decide how high the importance score (0-100) must be for each priority level, and how much each factor counts. Changes take effect for newly detected items.
+        </p>
+        {!canConfig ? <p className="small muted">View only: ask an administrator to change these settings.</p> : null}
         <form
           className="stack"
           onSubmit={(e) => {
@@ -185,7 +191,7 @@ function ConfigView({ landscape }: { landscape: LandscapeDetail }) {
           }}
         >
           <fieldset disabled={!canConfig}>
-            <legend>Band thresholds (minimum score)</legend>
+            <legend>Minimum score for each priority level</legend>
             <div className="form-grid">
               {Object.keys(bands).map((b) => (
                 <div className="field" key={b}>
@@ -198,12 +204,12 @@ function ConfigView({ landscape }: { landscape: LandscapeDetail }) {
             </div>
           </fieldset>
           <fieldset disabled={!canConfig}>
-            <legend>Dimension weights</legend>
+            <legend>How much each factor counts (0-1)</legend>
             <div className="form-grid">
               {DIMENSIONS.map((d) => (
                 <div className="field" key={d}>
-                  <label htmlFor={`w-${d}`}>
-                    {DIM_LABEL[d]} ({d})
+                  <label htmlFor={`w-${d}`} title={DIMENSION_LABELS[d]?.description}>
+                    {DIMENSION_LABELS[d]?.name ?? d}
                   </label>
                   <input id={`w-${d}`} type="number" min={0} max={1} step={0.05} value={weights[d]} onChange={(e) => setWeights({ ...weights, [d]: e.target.value })} />
                 </div>
@@ -213,13 +219,13 @@ function ConfigView({ landscape }: { landscape: LandscapeDetail }) {
           {canConfig ? (
             <>
               <div className="field">
-                <label htmlFor="thr-reason">Reason (audited)</label>
+                <label htmlFor="thr-reason">Reason for the change (kept in the activity log)</label>
                 <input id="thr-reason" type="text" value={reason} onChange={(e) => setReason(e.target.value)} />
               </div>
               <InlineError error={saveThresholds.error} />
               <div>
                 <button type="submit" className="btn btn-primary" disabled={saveThresholds.isPending}>
-                  Save configuration
+                  Save settings
                 </button>
               </div>
             </>
@@ -227,23 +233,27 @@ function ConfigView({ landscape }: { landscape: LandscapeDetail }) {
         </form>
       </section>
       <section className="card" aria-labelledby="mem-h">
-        <h2 id="mem-h">Members ({landscape.members.length})</h2>
+        <div className="row-between">
+          <h2 id="mem-h">What&rsquo;s in this market ({landscape.members.length})</h2>
+          <AddDrugButton landscapeId={landscape.id} className="btn btn-sm" />
+        </div>
+        <p className="small muted">The drugs, companies and trials monitored here. Mark your own drugs as &ldquo;Your drug&rdquo; so changes are scored against them.</p>
         {canWrite ? (
           <div className="form-grid" style={{ marginBottom: 12 }}>
             <div className="field">
-              <label htmlFor="mem-role">Role for new member</label>
+              <label htmlFor="mem-role">Add as</label>
               <select id="mem-role" value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
                 <option value="competitor">Competitor</option>
-                <option value="customer">Customer (your asset)</option>
-                <option value="monitored">Monitored</option>
+                <option value="customer">Your drug</option>
+                <option value="monitored">Monitored (context only)</option>
               </select>
             </div>
             <div style={{ gridColumn: 'span 2' }}>
               <EntityPicker
-                label="Add asset, company or trial"
+                label="Add a drug, company or trial"
                 onSelect={(h) => {
                   if (!['asset', 'company', 'trial'].includes(h.type)) {
-                    notify('Only assets, companies and trials can be landscape members', 'error');
+                    notify('Only drugs, companies and trials can be added to a market', 'error');
                     return;
                   }
                   addMember.mutate({ entity_type: h.type, entity_id: h.id });
@@ -252,12 +262,14 @@ function ConfigView({ landscape }: { landscape: LandscapeDetail }) {
             </div>
           </div>
         ) : null}
+        {landscape.members.length === 0 ? <EmptyState title="Nothing monitored yet">Use the search above to add your drug, its competitors and their trials.</EmptyState> : null}
         <ul className="list-plain" style={{ maxHeight: 460, overflowY: 'auto' }}>
           {landscape.members.map((m) => (
             <li key={m.id} className="row-between">
               <span>
                 {m.entity_type === 'asset' ? <Link to={`/assets/${m.entity_id}`}>{m.label ?? m.entity_id}</Link> : (m.label ?? m.entity_id)}{' '}
-                <span className="badge badge-neutral">{m.entity_type}</span> <span className={`badge ${m.role === 'customer' ? 'badge-danger' : 'badge-neutral'}`}>{m.role}</span>
+                <span className="badge badge-neutral">{entityTypeLabel(m.entity_type)}</span>{' '}
+                <span className={`badge ${m.role === 'customer' ? 'badge-danger' : 'badge-neutral'}`}>{roleLabel(m.role)}</span>
               </span>
               {canWrite ? (
                 <button type="button" className="btn btn-sm btn-ghost" onClick={() => removeMember.mutate(m.entity_id)} aria-label={`Remove ${m.label ?? m.entity_id}`}>
@@ -301,7 +313,7 @@ function CreateLandscape({ open, onClose }: { open: boolean; onClose: () => void
     <Modal
       open={open}
       onClose={onClose}
-      title="Create landscape"
+      title="Create a new market (landscape)"
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>
@@ -323,9 +335,9 @@ function CreateLandscape({ open, onClose }: { open: boolean; onClose: () => void
       >
         <InlineError error={m.error} />
         <div className="field">
-          <label htmlFor="cl-tpl">Template</label>
+          <label htmlFor="cl-tpl">Start from a template</label>
           <select id="cl-tpl" value={form.template_id} onChange={(e) => setForm({ ...form, template_id: e.target.value })}>
-            <option value="">No template (blank configuration)</option>
+            <option value="">No template (start blank)</option>
             {(templates.data ?? []).map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
@@ -340,11 +352,11 @@ function CreateLandscape({ open, onClose }: { open: boolean; onClose: () => void
           <input id="cl-name" type="text" required maxLength={200} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-autofocus />
         </div>
         <div className="field">
-          <label htmlFor="cl-disease">Disease</label>
+          <label htmlFor="cl-disease">Disease area</label>
           <input id="cl-disease" type="text" value={form.disease} onChange={(e) => setForm({ ...form, disease: e.target.value })} />
         </div>
         <div className="field">
-          <label htmlFor="cl-geo">Geographies (comma separated)</label>
+          <label htmlFor="cl-geo">Countries or regions (comma separated)</label>
           <input id="cl-geo" type="text" value={form.geographies} onChange={(e) => setForm({ ...form, geographies: e.target.value })} />
         </div>
         <div className="field">
@@ -382,25 +394,29 @@ export function LandscapePage() {
     <>
       <div className="page-header">
         <div>
-          <h1>{detail.data?.name ?? 'Landscape'}</h1>
-          <p>{detail.data?.description ?? 'Competitive landscape matrix, knowledge graph and configuration.'}</p>
+          <p className="eyebrow">Competitor landscape</p>
+          <h1>{detail.data?.name ?? 'Competitor landscape'}</h1>
+          <p>
+            {detail.data?.description ? `${detail.data.description} ` : ''}See who is developing what in this market: compare drugs side by side, explore how drugs, companies
+            and trials are connected, or adjust what is monitored.
+          </p>
         </div>
         <div className="btn-group">
           {landscapeId ? (
-            <button type="button" className="btn" onClick={exportJson}>
-              <Download size={15} aria-hidden /> Export JSON
+            <button type="button" className="btn" onClick={exportJson} title="Download all data for this market as a JSON file (for analysts and IT)">
+              <Download size={15} aria-hidden /> Download data
             </button>
           ) : null}
           {can(PERMS.landscapeWrite) ? (
             <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-              <Plus size={15} aria-hidden /> New landscape
+              <Plus size={15} aria-hidden /> New market
             </button>
           ) : null}
         </div>
       </div>
       {!loading && landscapes.length === 0 ? (
         <div className="card">
-          <EmptyState title="No landscapes yet">Create one from a template to start monitoring.</EmptyState>
+          <EmptyState title="No markets set up yet">Click &ldquo;New market&rdquo; and start from a template (for example a disease area) to begin monitoring competitors.</EmptyState>
         </div>
       ) : (
         <>
@@ -409,19 +425,34 @@ export function LandscapePage() {
             active={view}
             onChange={(v) => setSp(v === 'matrix' ? {} : { view: v }, { replace: true })}
             tabs={[
-              { id: 'matrix', label: 'Matrix' },
-              { id: 'graph', label: 'Graph' },
-              { id: 'config', label: 'Configuration' },
+              { id: 'matrix', label: 'Comparison table' },
+              { id: 'graph', label: 'Relationship map' },
+              { id: 'config', label: 'Setup & thresholds' },
             ]}
           />
+          <p className="small muted tab-intro">
+            {view === 'matrix'
+              ? 'Each row is a drug in this market; columns show key facts from trial registries and profiles. Your drug is highlighted.'
+              : view === 'graph'
+                ? 'How drugs, companies, trials and diseases are connected. Click a drug to open its profile.'
+                : 'Choose what is monitored in this market and how changes are prioritised.'}
+          </p>
           <div role="tabpanel" id={`panel-${view}`} aria-labelledby={`tab-${view}`}>
             {view === 'matrix' ? (
-              <QueryView query={matrix} isEmpty={(m) => m.rows.length === 0} empty={<EmptyState title="No assets in this landscape" />}>
+              <QueryView
+                query={matrix}
+                isEmpty={(m) => m.rows.length === 0}
+                empty={<EmptyState title="No drugs in this market yet">Open &ldquo;Setup &amp; thresholds&rdquo; and add your drug and its competitors.</EmptyState>}
+              >
                 {(m) => <MatrixView matrix={m} />}
               </QueryView>
             ) : null}
             {view === 'graph' ? (
-              <QueryView query={graph} isEmpty={(g) => g.nodes.length === 0} empty={<EmptyState title="No graph relationships yet" />}>
+              <QueryView
+                query={graph}
+                isEmpty={(g) => g.nodes.length === 0}
+                empty={<EmptyState title="No connections to show yet">Connections between drugs, companies and trials appear once sources have been checked.</EmptyState>}
+              >
                 {(g) => <GraphView graph={g} onActivate={(n) => n.type === 'asset' && navigate(`/assets/${n.id}`)} />}
               </QueryView>
             ) : null}

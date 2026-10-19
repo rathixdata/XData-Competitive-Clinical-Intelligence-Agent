@@ -5,7 +5,7 @@ import { AlertOctagon, ArrowLeft, CheckCheck, ExternalLink, Flag, History, Penci
 import { api } from '../../api/endpoints';
 import type { Artifact, ChangeRecord, Claim, EventDetail, EvidenceLink, SourceDocumentRef } from '../../api/types';
 import { PERMS, useAuth } from '../../auth/context';
-import { BandBadge, ReviewBadge, StatusBadge } from '../../components/Badges';
+import { BandBadge, BandLegend, ReviewBadge, StatusBadge } from '../../components/Badges';
 import { Modal } from '../../components/Dialog';
 import { EvidenceDrawer, RightsBlock } from '../../components/EvidenceDrawer';
 import { ImpactList } from '../../components/ImpactPath';
@@ -15,22 +15,27 @@ import { StatementCard, StatementLegend } from '../../components/Statement';
 import { EmptyState, ErrorState, InlineError, Loading } from '../../components/States';
 import { SECTION_LABELS, SECTION_ORDER } from '../../components/statementMeta';
 import { fmtDate, fmtDateTime, fmtValue, humanize, shortId } from '../../lib/format';
+import { changeKindLabel, eventTypeLabel, sourceLabel } from '../../lib/labels';
+import { BAND_INFO } from '../../components/bandMeta';
 import { errorMessage, useToast } from '../../lib/toastContext';
 import { FeedbackPanel } from './FeedbackPanel';
 import { NarrativeEditor } from './NarrativeEditor';
 
 function DiffTable({ changes }: { changes: ChangeRecord[] }) {
-  if (changes.length === 0) return <EmptyState title="No field-level changes recorded for this event" />;
+  if (changes.length === 0)
+    return <EmptyState title="No field-by-field changes for this item">This is usually a brand-new record (for example a new publication), so there is no earlier version to compare with.</EmptyState>;
   return (
     <div className="table-wrap">
       <table className="table">
         <caption className="sr-only">Field changes between source snapshots (old value to new value)</caption>
         <thead>
           <tr>
-            <th scope="col">Field</th>
-            <th scope="col">Previous value</th>
-            <th scope="col">New value</th>
-            <th scope="col">Snapshots compared</th>
+            <th scope="col">What changed</th>
+            <th scope="col">Before</th>
+            <th scope="col">After</th>
+            <th scope="col" title="We keep a copy of the source each time we check it, and compare the copies">
+              When we saw it
+            </th>
             <th scope="col">Source</th>
           </tr>
         </thead>
@@ -39,7 +44,7 @@ function DiffTable({ changes }: { changes: ChangeRecord[] }) {
             <tr key={c.id}>
               <th scope="row" style={{ fontWeight: 600 }}>
                 {humanize(c.field)}
-                <div className="tiny muted">{humanize(c.change_type)}</div>
+                <div className="tiny muted">{changeKindLabel(c.change_type)}</div>
                 {c.magnitude && typeof c.magnitude.pct_change === 'number' ? (
                   <div className="tiny muted">
                     {(c.magnitude.pct_change as number) > 0 ? '+' : ''}
@@ -57,26 +62,22 @@ function DiffTable({ changes }: { changes: ChangeRecord[] }) {
               </td>
               <td className="small">
                 {c.from_snapshot ? (
-                  <div>
-                    v{c.from_snapshot.version} retrieved {fmtDate(c.from_snapshot.retrieved_at)}
-                  </div>
+                  <div>Before: copy {c.from_snapshot.version}, checked {fmtDate(c.from_snapshot.retrieved_at)}</div>
                 ) : (
-                  <div className="muted">First observation</div>
+                  <div className="muted">First time we saw this</div>
                 )}
                 {c.to_snapshot ? (
-                  <div>
-                    to v{c.to_snapshot.version} retrieved {fmtDate(c.to_snapshot.retrieved_at)}
-                  </div>
+                  <div>After: copy {c.to_snapshot.version}, checked {fmtDate(c.to_snapshot.retrieved_at)}</div>
                 ) : null}
               </td>
               <td className="small">
                 {c.source_document?.uri ? (
                   <a href={c.source_document.uri} target="_blank" rel="noreferrer noopener">
-                    {c.source_document.source} record <ExternalLink size={11} aria-hidden />
+                    {sourceLabel(c.source_document.source)} record <ExternalLink size={11} aria-hidden />
                     <span className="sr-only"> (opens in a new tab)</span>
                   </a>
                 ) : (
-                  (c.source ?? '-')
+                  sourceLabel(c.source)
                 )}
               </td>
             </tr>
@@ -93,22 +94,35 @@ function ValidationBadges({ narrative }: { narrative: Artifact }) {
   const withheld = v?.withheld?.length ?? 0;
   const fallback = Boolean(v?.fallback_used || narrative.content.fallback_of);
   return (
-    <div className="row" aria-label="Validation summary">
-      <span className="badge badge-success">{counts.supported ?? 0} facts supported by evidence</span>
-      {counts.partially_supported ? <span className="badge badge-warning">{counts.partially_supported} partially supported</span> : null}
-      <span className={`badge ${withheld ? 'badge-warning' : 'badge-neutral'}`}>
-        {withheld} statement{withheld === 1 ? '' : 's'} withheld
+    <div className="row" role="group" aria-label="Automatic evidence checks">
+      <span className="small strong">Automatic evidence checks:</span>
+      <span className="badge badge-success" title="Facts the system confirmed against the cited source">
+        {counts.supported ?? 0} facts supported by evidence
       </span>
-      {counts.inference ? <span className="badge badge-inferred">{counts.inference} AI interpretations</span> : null}
+      {counts.partially_supported ? <span className="badge badge-warning">{counts.partially_supported} partly supported</span> : null}
+      <span className={`badge ${withheld ? 'badge-warning' : 'badge-neutral'}`} title="Statements the AI wrote but could not back with a source are removed before publishing">
+        {withheld} unverifiable statement{withheld === 1 ? '' : 's'} removed
+      </span>
+      {counts.inference ? (
+        <span className="badge badge-inferred" title="Hypotheses about what this may mean; not facts">
+          {counts.inference} AI interpretations
+        </span>
+      ) : null}
       {narrative.publishable ? (
-        <span className="badge badge-success">Publishable</span>
+        <span className="badge badge-success" title="The summary passed all evidence checks and can be shown to users">
+          Passed checks
+        </span>
       ) : (
-        <span className="badge badge-danger">
-          <ShieldAlert size={12} aria-hidden /> Blocked
+        <span className="badge badge-danger" title="The summary failed evidence checks and is held back">
+          <ShieldAlert size={12} aria-hidden /> Failed checks - held back
         </span>
       )}
-      {fallback ? <span className="badge badge-warning">Fallback used (deterministic output)</span> : null}
-      {v?.validator_version ? <span className="tiny muted">validator {v.validator_version}</span> : null}
+      {fallback ? (
+        <span className="badge badge-warning" title="The AI model was unavailable, so a simpler fact-only summary was produced by rules">
+          Simplified fact-only summary
+        </span>
+      ) : null}
+      {v?.validator_version ? <span className="tiny muted">checker {v.validator_version}</span> : null}
     </div>
   );
 }
@@ -135,7 +149,7 @@ function groupClaims(claims: Claim[]): [string, Claim[]][] {
 export function NarrativeBody({ narrative, onOpenEvidence }: { narrative: Artifact; onOpenEvidence: (l: EvidenceLink) => void }) {
   const ev = useMemo(() => evidenceMap(narrative), [narrative]);
   const groups = groupClaims(narrative.claims);
-  if (groups.length === 0) return <EmptyState title="No statements in this narrative" />;
+  if (groups.length === 0) return <EmptyState title="This summary has no statements" />;
   return (
     <div className="stack">
       {groups.map(([section, claims]) => (
@@ -159,7 +173,7 @@ function HistoryPanel({ detail, onOpenEvidence }: { detail: EventDetail; onOpenE
   return (
     <>
       {hist.length === 0 ? (
-        <p className="muted small">No narrative versions.</p>
+        <p className="muted small">No earlier versions. Each time the summary is rewritten or edited, the previous version is kept here.</p>
       ) : (
         <ol className="list-plain">
           {hist.map((h) => (
@@ -169,38 +183,38 @@ function HistoryPanel({ detail, onOpenEvidence }: { detail: EventDetail; onOpenE
                   <span className="strong">{fmtDateTime(h.created_at)}</span>
                   {h.id === current?.id ? <span className="badge badge-info">Current</span> : null}
                   <ReviewBadge status={h.review_status} humanEdited={h.is_human_edited} />
-                  {!h.publishable ? <span className="badge badge-danger">Blocked</span> : null}
-                  {h.fallback_used ? <span className="badge badge-warning">Fallback</span> : null}
+                  {!h.publishable ? <span className="badge badge-danger">Failed checks</span> : null}
+                  {h.fallback_used ? <span className="badge badge-warning">Simplified summary</span> : null}
                 </div>
                 <span className="tiny muted">
-                  {h.is_human_edited ? `Edited by ${shortId(h.edited_by)}` : 'Machine-generated'} - {h.model_workflow_version}
-                  {h.parent_id ? ` - derived from ${shortId(h.parent_id)}` : ''}
+                  {h.is_human_edited ? `Edited by analyst ${shortId(h.edited_by)}` : 'Written by AI'} - {h.model_workflow_version}
+                  {h.parent_id ? ` - based on version ${shortId(h.parent_id)}` : ''}
                 </span>
               </div>
               <button type="button" className="btn btn-sm" onClick={() => setSelected(h.id)}>
-                {h.id === current?.id ? 'View' : 'Compare with current'}
+                {h.id === current?.id ? 'View' : 'Compare with current version'}
               </button>
             </li>
           ))}
         </ol>
       )}
-      <Modal open={Boolean(selected)} onClose={() => setSelected(null)} title="Narrative version comparison" wide>
+      <Modal open={Boolean(selected)} onClose={() => setSelected(null)} title="Compare summary versions" wide>
         {art.isLoading ? <Loading /> : art.error ? <ErrorState error={art.error} /> : null}
         {art.data ? (
           <div className="grid grid-2">
             <section className="stack-sm" aria-label="Selected version">
               <h3>
-                Selected version ({fmtDateTime(art.data.created_at)}) {art.data.is_human_edited ? <span className="badge badge-human">Human-edited</span> : <span className="badge badge-neutral">Machine original</span>}
+                Selected version ({fmtDateTime(art.data.created_at)}) {art.data.is_human_edited ? <span className="badge badge-human">Human-edited</span> : <span className="badge badge-neutral">Original AI version</span>}
               </h3>
               {art.data.edit_reason ? <p className="small">Edit reason: {art.data.edit_reason}</p> : null}
               <NarrativeBody narrative={art.data} onOpenEvidence={onOpenEvidence} />
             </section>
             <section className="stack-sm" aria-label="Current version">
               <h3>
-                Current version {current?.is_human_edited ? <span className="badge badge-human">Human-edited</span> : <span className="badge badge-neutral">Machine</span>}
+                Current version {current?.is_human_edited ? <span className="badge badge-human">Human-edited</span> : <span className="badge badge-neutral">AI-written</span>}
               </h3>
               {current?.edit_reason ? <p className="small">Edit reason: {current.edit_reason}</p> : null}
-              {current ? <NarrativeBody narrative={current} onOpenEvidence={onOpenEvidence} /> : <p className="muted">No current narrative</p>}
+              {current ? <NarrativeBody narrative={current} onOpenEvidence={onOpenEvidence} /> : <p className="muted">No current summary</p>}
             </section>
           </div>
         ) : null}
@@ -211,15 +225,36 @@ function HistoryPanel({ detail, onOpenEvidence }: { detail: EventDetail; onOpenE
 
 type ActionKind = 'acknowledge' | 'escalate' | 'approve' | 'request_changes' | 'regenerate';
 
-const ACTION_TEXT: Record<ActionKind, { title: string; confirm: string; help: string }> = {
-  acknowledge: { title: 'Acknowledge event', confirm: 'Acknowledge', help: 'Marks the event as seen and triaged by you.' },
-  escalate: { title: 'Escalate event', confirm: 'Escalate', help: 'Escalates to stakeholders and sends an in-app notification.' },
-  approve: { title: 'Approve narrative', confirm: 'Approve', help: 'Marks the current narrative as analyst-approved.' },
-  request_changes: { title: 'Request changes', confirm: 'Request changes', help: 'Returns the narrative to machine (unreviewed) status.' },
+const ACTION_TEXT: Record<ActionKind, { title: string; confirm: string; help: string; done: string }> = {
+  acknowledge: {
+    title: 'Mark as reviewed',
+    confirm: 'Mark as reviewed',
+    help: 'Records that you have looked at this change and decided what (if anything) to do. Colleagues will see it as reviewed.',
+    done: 'Marked as reviewed',
+  },
+  escalate: {
+    title: 'Escalate to lead',
+    confirm: 'Escalate',
+    help: 'Flags this change as needing attention from your lead and stakeholders, and sends them an in-app notification.',
+    done: 'Escalated',
+  },
+  approve: {
+    title: 'Approve AI summary',
+    confirm: 'Approve summary',
+    help: 'Confirms that you have checked the AI-written summary against the evidence and it is accurate. It will be shown as analyst-approved.',
+    done: 'AI summary approved',
+  },
+  request_changes: {
+    title: 'Request changes to the AI summary',
+    confirm: 'Request changes',
+    help: 'Marks the AI summary as not yet acceptable. It goes back to "AI-written, not reviewed" so it can be rewritten or edited.',
+    done: 'Changes requested',
+  },
   regenerate: {
-    title: 'Regenerate interpretation',
-    confirm: 'Regenerate',
-    help: 'Re-runs retrieval, interpretation and validation with current evidence. Creates a new version.',
+    title: 'Rewrite AI summary',
+    confirm: 'Rewrite summary',
+    help: 'Asks the AI to write a fresh summary from the latest evidence and re-runs the evidence checks. The current version is kept in the version history.',
+    done: 'A new AI summary is being written',
   },
 };
 
@@ -245,7 +280,7 @@ function ActionDialog({ kind, eventId, onClose }: { kind: ActionKind | null; eve
       }
     },
     onSuccess: () => {
-      notify(`${kind ? ACTION_TEXT[kind].confirm : 'Action'} completed`);
+      notify(kind ? ACTION_TEXT[kind].done : 'Done');
       void qc.invalidateQueries({ queryKey: ['event', eventId] });
       void qc.invalidateQueries({ queryKey: ['events'] });
       void qc.invalidateQueries({ queryKey: ['inbox'] });
@@ -276,7 +311,7 @@ function ActionDialog({ kind, eventId, onClose }: { kind: ActionKind | null; eve
         <InlineError error={m.error} />
         {kind !== 'regenerate' ? (
           <div className="field">
-            <label htmlFor="action-note">Note (optional, recorded in the audit log)</label>
+            <label htmlFor="action-note">Note for colleagues (optional, kept in the activity log)</label>
             <textarea id="action-note" value={note} onChange={(e) => setNote(e.target.value)} data-autofocus />
           </div>
         ) : null}
@@ -288,7 +323,7 @@ function ActionDialog({ kind, eventId, onClose }: { kind: ActionKind | null; eve
 function SourceDocuments({ changes }: { changes: ChangeRecord[] }) {
   const docs = new Map<string, SourceDocumentRef>();
   for (const c of changes) if (c.source_document) docs.set(c.source_document.id, c.source_document);
-  if (docs.size === 0) return <p className="muted small">No source document linked.</p>;
+  if (docs.size === 0) return <p className="muted small">No original source record is linked to this change.</p>;
   return (
     <ul className="list-plain">
       {[...docs.values()].map((d) => (
@@ -296,18 +331,18 @@ function SourceDocuments({ changes }: { changes: ChangeRecord[] }) {
           <strong>{d.title ?? d.uri ?? d.id}</strong>
           <dl className="kv small">
             <dt>Source</dt>
-            <dd>{d.source}</dd>
+            <dd>{sourceLabel(d.source)}</dd>
             <dt>Retrieved</dt>
             <dd>{fmtDateTime(d.retrieved_at)}</dd>
             {d.connector_version ? (
               <>
-                <dt>Connector</dt>
+                <dt>Collector version</dt>
                 <dd>v{d.connector_version}</dd>
               </>
             ) : null}
             {d.checksum ? (
               <>
-                <dt>Checksum</dt>
+                <dt title="Digital fingerprint proving the stored copy has not been altered">Fingerprint</dt>
                 <dd className="mono" title={d.checksum}>
                   {d.checksum.slice(0, 16)}...
                 </dd>
@@ -327,11 +362,21 @@ function SourceDocuments({ changes }: { changes: ChangeRecord[] }) {
           </dl>
           <RightsBlock rights={d.rights} />
           <p className="tiny muted" style={{ margin: 0 }}>
-            Disclaimer: third-party source content is shown for reference under the rights above; verify against the original record before external use.
+            Third-party content is shown for reference under the usage rights above. Check the original record before using it outside your organisation.
           </p>
         </li>
       ))}
     </ul>
+  );
+}
+
+/** One plain sentence: score out of 100, band, and what to do. */
+function PriorityLine({ band, score }: { band: string; score: number }) {
+  const info = BAND_INFO.find((b) => b.band === band);
+  return (
+    <p className="priority-line" style={{ margin: 0 }}>
+      <strong>Importance score {score.toFixed(0)}/100</strong> ({band}){info ? ` - ${info.meaning} ${info.action}` : ''}
+    </p>
   );
 }
 
@@ -344,7 +389,7 @@ export function EventDetailPage() {
   const [editing, setEditing] = useState(false);
   const { notify } = useToast();
 
-  if (q.isLoading) return <Loading label="Loading event" />;
+  if (q.isLoading) return <Loading label="Loading change" />;
   if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data) return null;
   const d = q.data;
@@ -357,78 +402,95 @@ export function EventDetailPage() {
     <>
       <nav aria-label="Breadcrumb" className="small" style={{ marginBottom: 8 }}>
         <Link to="/feed">
-          <ArrowLeft size={13} aria-hidden /> Back to feed
+          <ArrowLeft size={13} aria-hidden /> Back to all changes
         </Link>
       </nav>
       <header className="stack-sm" style={{ marginBottom: 16 }}>
         <div className="row">
           <BandBadge band={e.band} score={e.materiality_score} />
-          <span className="badge badge-neutral">{humanize(e.primary_type)}</span>
+          <span className="badge badge-neutral">{eventTypeLabel(e.primary_type)}</span>
           {e.secondary_tags.slice(0, 5).map((t) => (
             <span key={t} className="badge badge-neutral">
-              {humanize(t)}
+              {eventTypeLabel(t)}
             </span>
           ))}
           <StatusBadge status={e.status} />
           <ReviewBadge status={e.review_status} humanEdited={n?.is_human_edited} />
-          <span className="badge badge-neutral">Version {e.version}</span>
+          {e.version > 1 ? (
+            <span className="badge badge-neutral" title="This item was updated as new source data arrived">
+              Updated {e.version - 1} time{e.version === 2 ? '' : 's'}
+            </span>
+          ) : null}
         </div>
         <h1 style={{ margin: 0 }}>{n?.content.headline ?? e.title}</h1>
         <p className="small muted" style={{ margin: 0 }}>
-          Source: {e.source} - fetched {fmtDateTime(e.source_fetched_at)} - detected {fmtDateTime(e.detected_at)}
-          {e.published_at ? ` - published ${fmtDateTime(e.published_at)}` : ''}
-          {e.acknowledged_by ? ` - acknowledged by ${shortId(e.acknowledged_by)}` : ''}
+          Found in {sourceLabel(e.source)} - source checked {fmtDateTime(e.source_fetched_at)} - change detected {fmtDateTime(e.detected_at)}
+          {e.acknowledged_by ? ` - reviewed by ${shortId(e.acknowledged_by)}` : ''}
         </p>
+        <PriorityLine band={e.band} score={e.materiality_score} />
         {e.update_summary?.length ? (
           <div className="banner banner-info" role="note">
             <History size={16} aria-hidden />
-            <p>Updated: {e.update_summary.join('; ')}</p>
+            <p>Updated since first seen: {e.update_summary.join('; ')}</p>
           </div>
         ) : null}
         {e.publication_blocked_reason ? (
           <div className="banner banner-danger" role="alert">
             <AlertOctagon size={18} aria-hidden />
             <p>
-              <strong>Publication blocked:</strong> {e.publication_blocked_reason}
+              <strong>Held back from the feed:</strong> {e.publication_blocked_reason}
             </p>
           </div>
         ) : null}
         <div className="btn-group" role="group" aria-label="Event actions">
           {canTriage ? (
             <>
-              <button type="button" className="btn" onClick={() => setAction('acknowledge')} disabled={e.status === 'acknowledged'}>
-                <CheckCheck size={15} aria-hidden /> Acknowledge
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setAction('acknowledge')}
+                disabled={e.status === 'acknowledged'}
+                title="Record that you have looked at this change"
+              >
+                <CheckCheck size={15} aria-hidden /> {e.status === 'acknowledged' ? 'Reviewed' : 'Mark as reviewed'}
               </button>
-              <button type="button" className="btn" onClick={() => setAction('escalate')} disabled={e.status === 'escalated'}>
-                <Flag size={15} aria-hidden /> Escalate
+              <button type="button" className="btn" onClick={() => setAction('escalate')} disabled={e.status === 'escalated'} title="Flag this change to your lead and stakeholders">
+                <Flag size={15} aria-hidden /> {e.status === 'escalated' ? 'Escalated' : 'Escalate to lead'}
               </button>
             </>
           ) : null}
           {canEdit && n ? (
             <>
-              <button type="button" className="btn" onClick={() => setAction('approve')} disabled={!n.publishable || n.review_status === 'Approved'}>
-                <ThumbsUp size={15} aria-hidden /> Approve narrative
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setAction('approve')}
+                disabled={!n.publishable || n.review_status === 'Approved'}
+                title="Confirm the AI-written summary is accurate"
+              >
+                <ThumbsUp size={15} aria-hidden /> Approve AI summary
               </button>
-              <button type="button" className="btn" onClick={() => setAction('request_changes')}>
+              <button type="button" className="btn" onClick={() => setAction('request_changes')} title="Mark the AI summary as needing changes">
                 Request changes
               </button>
-              <button type="button" className="btn" onClick={() => setEditing(true)}>
-                <PencilLine size={15} aria-hidden /> Edit narrative
+              <button type="button" className="btn" onClick={() => setEditing(true)} title="Correct or reword the AI summary yourself">
+                <PencilLine size={15} aria-hidden /> Edit summary
               </button>
             </>
           ) : null}
           {canEdit ? (
-            <button type="button" className="btn" onClick={() => setAction('regenerate')}>
-              <RefreshCw size={15} aria-hidden /> Regenerate
+            <button type="button" className="btn" onClick={() => setAction('regenerate')} title="Ask the AI to write a fresh summary from the latest evidence">
+              <RefreshCw size={15} aria-hidden /> Rewrite AI summary
             </button>
           ) : null}
           <button
             type="button"
             className="btn btn-ghost"
+            title="Copy a link to this page to share with a colleague"
             onClick={async () => {
               try {
                 await navigator.clipboard.writeText(window.location.href);
-                notify('Event link copied');
+                notify('Link copied');
               } catch (err) {
                 notify(errorMessage(err), 'error');
               }
@@ -445,6 +507,7 @@ export function EventDetailPage() {
             <section className="card" aria-labelledby="why-h">
               <div className="card-header">
                 <h2 id="why-h">Why am I seeing this?</h2>
+                <span className="small muted">Plain-language explanation of the score</span>
               </div>
               <ExplanationPanel x={d.explanation} />
             </section>
@@ -452,16 +515,20 @@ export function EventDetailPage() {
 
           <section className="card" aria-labelledby="diff-h">
             <div className="card-header">
-              <h2 id="diff-h">What changed (verified from source snapshots)</h2>
+              <h2 id="diff-h">What changed</h2>
+              <span className="small muted">Compared directly between two saved copies of the source record</span>
             </div>
             <DiffTable changes={d.changes} />
           </section>
 
           <section className="card" aria-labelledby="narr-h">
             <div className="card-header">
-              <h2 id="narr-h">Impact narrative</h2>
+              <h2 id="narr-h">AI summary: what it means for you</h2>
               {n ? <ReviewBadge status={n.review_status} humanEdited={n.is_human_edited} /> : null}
             </div>
+            <p className="small muted section-intro">
+              Written by AI from the evidence above, then checked automatically. Facts link to their source; interpretations are hypotheses for you to judge.
+            </p>
             {n ? (
               <div className="stack">
                 <ValidationBadges narrative={n} />
@@ -470,7 +537,7 @@ export function EventDetailPage() {
                     <AlertOctagon size={16} aria-hidden />
                     <div>
                       <p>
-                        <strong>Blocked reasons:</strong>
+                        <strong>Why it was held back:</strong>
                       </p>
                       <ul style={{ margin: 0, paddingLeft: 18 }}>
                         {n.validation.blocked_reasons.map((r) => (
@@ -482,14 +549,14 @@ export function EventDetailPage() {
                 ) : null}
                 {n.is_human_edited && n.edit_reason ? (
                   <p className="small">
-                    <strong>Analyst edit reason:</strong> {n.edit_reason}
+                    <strong>Why the analyst edited it:</strong> {n.edit_reason}
                   </p>
                 ) : null}
                 <StatementLegend />
                 <NarrativeBody narrative={n} onOpenEvidence={setEvidence} />
                 {n.validation?.withheld?.length ? (
                   <details>
-                    <summary className="small">{n.validation.withheld.length} withheld statement(s) (not published; retained for audit)</summary>
+                    <summary className="small">{n.validation.withheld.length} removed statement(s) that could not be backed by evidence (kept for the record)</summary>
                     <ul className="small">
                       {n.validation.withheld.map((w, i) => (
                         <li key={i}>{w.statement}</li>
@@ -498,17 +565,19 @@ export function EventDetailPage() {
                   </details>
                 ) : null}
                 <p className="tiny muted" style={{ margin: 0 }}>
-                  Model / workflow: {n.model_workflow_version}
+                  AI model and version: {n.model_workflow_version}
                 </p>
               </div>
             ) : (
-              <EmptyState title="No narrative generated yet">{canEdit ? 'Use Regenerate to create one.' : null}</EmptyState>
+              <EmptyState title="No AI summary yet">
+                {canEdit ? 'Click "Rewrite AI summary" above to have one written from the evidence.' : 'A summary will appear here once it has been written and checked.'}
+              </EmptyState>
             )}
           </section>
 
           <section className="card" aria-labelledby="hist-h">
             <div className="card-header">
-              <h2 id="hist-h">Narrative history</h2>
+              <h2 id="hist-h">Summary version history</h2>
             </div>
             <HistoryPanel detail={d} onOpenEvidence={setEvidence} />
           </section>
@@ -517,26 +586,31 @@ export function EventDetailPage() {
         <div className="stack" style={{ gap: 16, minWidth: 0 }}>
           <section className="card" aria-labelledby="impact-h">
             <div className="card-header">
-              <h2 id="impact-h">Impact path to your assets</h2>
+              <h2 id="impact-h">How this connects to your drug</h2>
             </div>
-            {d.impacts?.length ? <ImpactList impacts={d.impacts} /> : <p className="muted small">Not mapped to any customer asset.</p>}
+            {d.impacts?.length ? (
+              <ImpactList impacts={d.impacts} />
+            ) : (
+              <p className="muted small">This change is not linked to any of your drugs. It is shown because it concerns a company or drug in this market.</p>
+            )}
           </section>
           <section className="card" aria-labelledby="score-h">
             <div className="card-header">
-              <h2 id="score-h">Why this score</h2>
+              <h2 id="score-h">How the importance score was calculated</h2>
               <BandBadge band={e.band} score={e.materiality_score} />
             </div>
             <ScoreExplanation explanation={d.score_explanation} score={e.materiality_score} />
+            <BandLegend thresholds={d.score_explanation?.band_thresholds} />
           </section>
           <section className="card" aria-labelledby="src-h">
             <div className="card-header">
-              <h2 id="src-h">Source document</h2>
+              <h2 id="src-h">Original source record</h2>
             </div>
             <SourceDocuments changes={d.changes} />
           </section>
           <section className="card" aria-labelledby="fb-h">
             <div className="card-header">
-              <h2 id="fb-h">Feedback</h2>
+              <h2 id="fb-h">Was this useful?</h2>
             </div>
             <FeedbackPanel detail={d} />
           </section>

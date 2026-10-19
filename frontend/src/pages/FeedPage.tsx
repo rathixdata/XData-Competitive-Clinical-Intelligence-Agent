@@ -4,7 +4,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Bookmark, Filter, Link2, RotateCcw, Trash2, X } from 'lucide-react';
 import { api } from '../api/endpoints';
 import { BANDS, type SavedView, type Visibility } from '../api/types';
-import { BandBadge, ReviewBadge, StatusBadge } from '../components/Badges';
+import { BandBadge, BandLegend, ReviewBadge, StatusBadge } from '../components/Badges';
 import { Modal } from '../components/Dialog';
 import { EntityPicker } from '../components/EntityPicker';
 import { EmptyState, ErrorState, InlineError, Loading } from '../components/States';
@@ -19,15 +19,16 @@ import {
   type FeedFilters,
   type MultiKey,
 } from '../lib/feedFilters';
-import { fmtDate, humanize } from '../lib/format';
+import { fmtDate } from '../lib/format';
+import { eventTypeLabel, humanizeEnum, sourceLabel, statusLabel, visibilityLabel } from '../lib/labels';
 import { errorMessage, useToast } from '../lib/toastContext';
 
 const STATUS_OPTIONS = ['published', 'acknowledged', 'escalated', 'blocked', 'archived'];
 const SORTS: { value: string; label: string }[] = [
   { value: 'date', label: 'Newest first' },
   { value: '-date', label: 'Oldest first' },
-  { value: 'score', label: 'Highest materiality' },
-  { value: '-score', label: 'Lowest materiality' },
+  { value: 'score', label: 'Most important first' },
+  { value: '-score', label: 'Least important first' },
 ];
 
 function CheckGroup({
@@ -36,18 +37,20 @@ function CheckGroup({
   selected,
   onChange,
   render,
+  hint,
 }: {
   legend: string;
   options: { value: string; count?: number }[];
   selected: string[];
   onChange: (v: string[]) => void;
   render?: (v: string) => ReactNode;
+  hint?: string;
 }) {
   return (
     <fieldset>
-      <legend>{legend}</legend>
+      <legend title={hint}>{legend}</legend>
       <div className="stack-sm" style={{ gap: 4, maxHeight: 180, overflowY: 'auto' }}>
-        {options.length === 0 ? <span className="small muted">No options</span> : null}
+        {options.length === 0 ? <span className="small muted">Nothing to filter by yet</span> : null}
         {options.map((o) => (
           <label key={o.value} className="checkbox">
             <input
@@ -55,7 +58,7 @@ function CheckGroup({
               checked={selected.includes(o.value)}
               onChange={(e) => onChange(e.target.checked ? [...selected, o.value] : selected.filter((x) => x !== o.value))}
             />
-            {render ? render(o.value) : humanize(o.value)}
+            {render ? render(o.value) : humanizeEnum(o.value)}
             {o.count !== undefined ? <span className="tiny muted">({o.count})</span> : null}
           </label>
         ))}
@@ -77,22 +80,32 @@ function TextFilters({ filters, update }: { filters: FeedFilters; update: (p: Pa
     <form className="form-grid" onSubmit={submit} aria-label="Search and range filters">
       <div className="field" style={{ gridColumn: 'span 2' }}>
         <label htmlFor="f-q">Search titles</label>
-        <input id="f-q" type="search" value={draft.q} onChange={(e) => setDraft({ ...draft, q: e.target.value })} placeholder="e.g. NCT99000001, endpoint" />
+        <input id="f-q" type="search" value={draft.q} onChange={(e) => setDraft({ ...draft, q: e.target.value })} placeholder="e.g. a trial number (NCT99000001), drug or company name" />
       </div>
       <div className="field">
-        <label htmlFor="f-from">Detected from</label>
+        <label htmlFor="f-from">Found from</label>
         <input id="f-from" type="date" value={draft.from} onChange={(e) => setDraft({ ...draft, from: e.target.value })} />
       </div>
       <div className="field">
-        <label htmlFor="f-to">Detected to</label>
+        <label htmlFor="f-to">Found until</label>
         <input id="f-to" type="date" value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} />
       </div>
       <div className="field">
         <label htmlFor="f-min">Minimum score</label>
-        <input id="f-min" type="number" min={0} max={100} step={1} value={draft.min_score} onChange={(e) => setDraft({ ...draft, min_score: e.target.value })} />
+        <input
+          id="f-min"
+          type="number"
+          min={0}
+          max={100}
+          step={1}
+          placeholder="0-100"
+          title="Only show changes with an importance score at least this high (0-100)"
+          value={draft.min_score}
+          onChange={(e) => setDraft({ ...draft, min_score: e.target.value })}
+        />
       </div>
       <div className="field">
-        <button type="submit" className="btn btn-primary">
+        <button type="submit" className="btn btn-primary" title="Apply the search, dates and minimum score">
           Apply
         </button>
       </div>
@@ -144,20 +157,21 @@ function SavedViews({ filters, update }: { filters: FeedFilters; update: (p: Par
           if (v) apply(v);
         }}
       >
-        <option value="">{items.length ? 'Apply a saved view...' : 'No saved views'}</option>
+        <option value="">{items.length ? 'Open a saved view...' : 'No saved views yet'}</option>
         {items.map((v) => (
           <option key={v.id} value={v.id}>
-            {v.name} ({v.visibility}
-            {v.owned ? '' : ', shared'})
+            {v.name} ({visibilityLabel(v.visibility)}
+            {v.owned ? '' : ', shared with you'})
           </option>
         ))}
       </select>
-      <button type="button" className="btn btn-sm" onClick={() => setOpen(true)}>
+      <button type="button" className="btn btn-sm" onClick={() => setOpen(true)} title="Save the current filters so you can reopen them later">
         <Bookmark size={14} aria-hidden /> Save view
       </button>
       <button
         type="button"
         className="btn btn-sm"
+        title="Copy a link to exactly this filtered view, to share with a colleague"
         onClick={async () => {
           try {
             await navigator.clipboard.writeText(window.location.href);
@@ -172,7 +186,7 @@ function SavedViews({ filters, update }: { filters: FeedFilters; update: (p: Par
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="Save feed view"
+        title="Save this view"
         footer={
           <>
             <button type="button" className="btn" onClick={() => setOpen(false)}>
@@ -198,14 +212,16 @@ function SavedViews({ filters, update }: { filters: FeedFilters; update: (p: Par
             <input id="sv-name" type="text" required value={name} onChange={(e) => setName(e.target.value)} data-autofocus />
           </div>
           <div className="field">
-            <label htmlFor="sv-vis">Visibility</label>
+            <label htmlFor="sv-vis">Who can see it</label>
             <select id="sv-vis" value={visibility} onChange={(e) => setVisibility(e.target.value as Visibility)}>
-              <option value="private">Private (only me)</option>
-              <option value="team">Team</option>
-              <option value="tenant">Everyone in the tenant</option>
+              <option value="private">Only me</option>
+              <option value="team">My team</option>
+              <option value="tenant">Everyone in my organisation</option>
             </select>
           </div>
-          <p className="small muted">Saves the current filters: {activeFilterCount(filters)} active, sort {filters.sort ?? 'date'}.</p>
+          <p className="small muted">
+            Saves the current filters ({activeFilterCount(filters)} active) and sort order ({SORTS.find((x) => x.value === (filters.sort ?? 'date'))?.label.toLowerCase()}).
+          </p>
           {items.filter((v) => v.owned).length ? (
             <div>
               <h3>Your saved views</h3>
@@ -215,7 +231,7 @@ function SavedViews({ filters, update }: { filters: FeedFilters; update: (p: Par
                   .map((v) => (
                     <li key={v.id} className="row-between">
                       <span>
-                        {v.name} <span className="badge badge-neutral">{v.visibility}</span>
+                        {v.name} <span className="badge badge-neutral">{visibilityLabel(v.visibility)}</span>
                       </span>
                       <button type="button" className="btn btn-sm btn-ghost" onClick={() => del.mutate(v.id)} aria-label={`Delete saved view ${v.name}`}>
                         <Trash2 size={14} aria-hidden />
@@ -235,7 +251,7 @@ export function FeedPage() {
   const [filters, update, reset] = useFeedFilters();
   const { landscapeId } = useLandscape();
   const lsId = filters.landscape_id ?? landscapeId;
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = useState(() => typeof window === 'undefined' || window.innerWidth > 700);
   const facets = useQuery({ queryKey: ['facets', lsId ?? null], queryFn: () => api.facets(lsId), staleTime: 5 * 60_000 });
   const lsDetail = useQuery({ queryKey: ['landscape', lsId], queryFn: () => api.landscape(lsId as string), enabled: Boolean(lsId), staleTime: 60_000 });
   const apiQuery = toApiQuery(filters, landscapeId);
@@ -251,8 +267,11 @@ export function FeedPage() {
     <>
       <div className="page-header">
         <div>
-          <h1>Intelligence feed</h1>
-          <p>Every filter is part of the page address, so any view can be bookmarked or shared.</p>
+          <h1>All changes</h1>
+          <p>
+            Every change detected in competitor trials, publications, FDA labels and company filings, with an importance score for your drugs. Filter the list, open any change to
+            see the evidence, and save or share a view.
+          </p>
         </div>
         <SavedViews filters={filters} update={update} />
       </div>
@@ -273,11 +292,11 @@ export function FeedPage() {
                 </option>
               ))}
             </select>
-            <label className="checkbox">
+            <label className="checkbox" title="Move changes about companies and drugs on your watchlists higher up">
               <input type="checkbox" checked={filters.personalize === 'true'} onChange={(e) => update({ personalize: e.target.checked ? 'true' : undefined })} />
-              Personalise ranking (watchlists)
+              Boost my watchlists
             </label>
-            <button type="button" className="btn btn-sm" onClick={reset} disabled={count === 0 && !filters.sort}>
+            <button type="button" className="btn btn-sm" onClick={reset} disabled={count === 0 && !filters.sort} title="Clear all filters and sorting">
               <RotateCcw size={14} aria-hidden /> Reset
             </button>
             <button type="button" className="btn btn-sm" aria-expanded={showFilters} aria-controls="filter-body" onClick={() => setShowFilters((s) => !s)}>
@@ -289,18 +308,26 @@ export function FeedPage() {
           <TextFilters filters={filters} update={update} />
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
             <CheckGroup
-              legend="Band"
-              options={BANDS.map((b) => ({ value: b }))}
+              legend="Priority"
+              hint="How much the change matters to your drugs"
+              options={BANDS.slice().reverse().map((b) => ({ value: b }))}
               selected={filters.band}
               onChange={setMulti('band')}
               render={(v) => <BandBadge band={v} />}
             />
-            <CheckGroup legend="Event type" options={fc.type ?? []} selected={filters.event_type} onChange={setMulti('event_type')} />
-            <CheckGroup legend="Source" options={fc.source ?? []} selected={filters.source} onChange={setMulti('source')} render={(v) => v} />
-            <CheckGroup legend="Status" options={STATUS_OPTIONS.map((s) => ({ value: s }))} selected={filters.status} onChange={setMulti('status')} />
+            <CheckGroup legend="Kind of change" options={fc.type ?? []} selected={filters.event_type} onChange={setMulti('event_type')} render={eventTypeLabel} />
+            <CheckGroup legend="Where it was found" options={fc.source ?? []} selected={filters.source} onChange={setMulti('source')} render={sourceLabel} />
+            <CheckGroup
+              legend="Review status"
+              hint="Whether an analyst has looked at it"
+              options={STATUS_OPTIONS.map((s) => ({ value: s }))}
+              selected={filters.status}
+              onChange={setMulti('status')}
+              render={statusLabel}
+            />
             <div className="stack-sm">
               <div className="field">
-                <label htmlFor="f-mech">Mechanism</label>
+                <label htmlFor="f-mech">How the drug works (mechanism)</label>
                 <select id="f-mech" value={filters.mechanism ?? ''} onChange={(e) => update({ mechanism: e.target.value || undefined })}>
                   <option value="">Any mechanism</option>
                   {[...(fc.mechanism ?? []), ...(fc.target ?? [])].map((m) => (
@@ -311,9 +338,9 @@ export function FeedPage() {
                 </select>
               </div>
               <div className="field">
-                <label htmlFor="f-ind">Indication</label>
+                <label htmlFor="f-ind">Disease (indication)</label>
                 <select id="f-ind" value={filters.indication ?? ''} onChange={(e) => update({ indication: e.target.value || undefined })}>
-                  <option value="">Any indication</option>
+                  <option value="">Any disease</option>
                   {(fc.indication ?? []).map((m) => (
                     <option key={m.value} value={m.value}>
                       {m.value} ({m.count})
@@ -322,9 +349,9 @@ export function FeedPage() {
                 </select>
               </div>
               <div className="field">
-                <label htmlFor="f-imp">Affects my asset</label>
+                <label htmlFor="f-imp">Affects my drug</label>
                 <select id="f-imp" value={filters.impacted_asset_id ?? ''} onChange={(e) => update({ impacted_asset_id: e.target.value || undefined })}>
-                  <option value="">Any</option>
+                  <option value="">Any of my drugs</option>
                   {customers.map((m) => (
                     <option key={m.entity_id} value={m.entity_id}>
                       {m.label ?? m.entity_id}
@@ -343,11 +370,11 @@ export function FeedPage() {
                   </button>
                 </span>
               ) : null}
-              <EntityPicker label="Competitor asset" type="asset" onSelect={(h) => update({ asset_id: h.id, asset_name: h.name })} />
+              <EntityPicker label="Competitor drug" type="asset" onSelect={(h) => update({ asset_id: h.id, asset_name: h.name })} />
               {filters.asset_id ? (
                 <span className="badge badge-info">
-                  Asset: {filters.asset_name ?? filters.asset_id.slice(0, 8)}
-                  <button type="button" className="btn btn-ghost btn-sm" style={{ height: 18 }} onClick={() => update({ asset_id: undefined, asset_name: undefined })} aria-label="Clear asset filter">
+                  Drug: {filters.asset_name ?? filters.asset_id.slice(0, 8)}
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ height: 18 }} onClick={() => update({ asset_id: undefined, asset_name: undefined })} aria-label="Clear drug filter">
                     <X size={12} aria-hidden />
                   </button>
                 </span>
@@ -358,42 +385,55 @@ export function FeedPage() {
       </section>
 
       <section aria-labelledby="results-h">
-        <div className="row-between" style={{ marginBottom: 8 }}>
+        <BandLegend />
+        <div className="row-between" style={{ margin: '10px 0 8px' }}>
           <h2 id="results-h" style={{ margin: 0 }}>
             Results
           </h2>
           <span className="small muted" aria-live="polite">
-            {events.data ? `${events.data.total} event${events.data.total === 1 ? '' : 's'}` : ''}
+            {events.data ? `${events.data.total} change${events.data.total === 1 ? '' : 's'}` : ''}
             {events.isFetching && !events.isLoading ? ' - updating...' : ''}
           </span>
         </div>
         {events.isLoading ? (
-          <Loading label="Loading events" />
+          <Loading label="Loading changes" />
         ) : events.error ? (
           <ErrorState error={events.error} onRetry={() => void events.refetch()} />
         ) : !events.data || events.data.items.length === 0 ? (
           <div className="card">
-            <EmptyState title="No events match these filters">
-              <button type="button" className="btn btn-sm" onClick={reset}>
-                Clear filters
-              </button>
+            <EmptyState title={count ? 'No changes match these filters' : 'No changes detected yet'}>
+              {count ? (
+                <>
+                  <p style={{ margin: '0 0 8px' }}>Try a wider date range, a lower minimum score, or clear the filters.</p>
+                  <button type="button" className="btn btn-sm" onClick={reset}>
+                    Clear filters
+                  </button>
+                </>
+              ) : (
+                <p style={{ margin: 0 }}>Changes appear here automatically as soon as the data sources report something new about drugs in this market.</p>
+              )}
             </EmptyState>
           </div>
         ) : (
           <>
             <div className="table-wrap">
               <table className="table">
-                <caption className="sr-only">Intelligence events</caption>
+                <caption className="sr-only">Detected competitor changes</caption>
                 <thead>
                   <tr>
-                    <th scope="col">Materiality</th>
-                    <th scope="col">Event</th>
-                    <th scope="col">Type</th>
-                    <th scope="col">Affected asset(s)</th>
-                    <th scope="col">Source</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Review</th>
-                    <th scope="col">Detected</th>
+                    <th scope="col" title="Importance score (0-100) and priority level">
+                      Priority
+                    </th>
+                    <th scope="col">What changed</th>
+                    <th scope="col">Kind of change</th>
+                    <th scope="col">Your drug(s) affected</th>
+                    <th scope="col" title="Whether an analyst has reviewed or escalated it">
+                      Status
+                    </th>
+                    <th scope="col" title="Whether the AI summary has been checked by an analyst">
+                      AI summary
+                    </th>
+
                   </tr>
                 </thead>
                 <tbody>
@@ -401,22 +441,23 @@ export function FeedPage() {
                     <tr key={e.id}>
                       <td>
                         <BandBadge band={e.band} score={e.materiality_score} />
-                        {e.personal_boost ? <div className="tiny muted">+{e.personal_boost} watchlist boost</div> : null}
+                        {e.personal_boost ? <div className="tiny muted">+{e.personal_boost} for your watchlists</div> : null}
                       </td>
-                      <td style={{ minWidth: 260 }}>
+                      <td style={{ minWidth: 280 }}>
                         <Link to={`/events/${e.id}`}>{e.title}</Link>
-                        {e.update_summary?.length ? <div className="tiny muted">Updated: {e.update_summary.join('; ')}</div> : null}
+                        <div className="tiny muted">
+                          Found in {sourceLabel(e.source)} on {fmtDate(e.detected_at)}
+                        </div>
+                        {e.update_summary?.length ? <div className="tiny muted">Updated since first seen: {e.update_summary.join('; ')}</div> : null}
                       </td>
-                      <td>{humanize(e.primary_type)}</td>
-                      <td>{e.impacted_assets?.length ? [...new Set(e.impacted_assets.map((m) => m.asset_name))].join(', ') : <span className="muted">None mapped</span>}</td>
-                      <td>{e.source}</td>
+                      <td>{eventTypeLabel(e.primary_type)}</td>
+                      <td>{e.impacted_assets?.length ? [...new Set(e.impacted_assets.map((m) => m.asset_name))].join(', ') : <span className="muted">None of your drugs</span>}</td>
                       <td>
                         <StatusBadge status={e.status} />
                       </td>
                       <td>
                         <ReviewBadge status={e.review_status} />
                       </td>
-                      <td className="nowrap">{fmtDate(e.detected_at)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -94,7 +94,17 @@ def run_connector_now(key: str, p: Principal = Depends(require(Perm.CONNECTOR_AD
             raise Conflict("a run is already in progress")
         audit.record(db, action="connector.run", resource_type="connector", resource_id=key, tenant_id=p.tenant_id,
                      actor_id=p.actor)
-    res = run_connector_task.apply_async(args=[key], kwargs={"trigger": "manual", "requested_by": p.actor}, queue="ingest")
+    kwargs = {"trigger": "manual", "requested_by": p.actor}
+    if get_settings().inprocess_scheduler:
+        # Single-service mode: tasks run eagerly, so run in the background instead of inside this request.
+        import threading
+        import uuid as _uuid
+
+        task_id = str(_uuid.uuid4())
+        threading.Thread(target=run_connector_task.apply, args=([key], kwargs), kwargs={"task_id": task_id},
+                         name=f"connector-{key}", daemon=True).start()
+        return {"queued": True, "task_id": task_id}
+    res = run_connector_task.apply_async(args=[key], kwargs=kwargs, queue="ingest")
     return {"queued": True, "task_id": res.id}
 
 

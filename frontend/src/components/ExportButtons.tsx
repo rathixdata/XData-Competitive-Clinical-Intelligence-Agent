@@ -4,6 +4,7 @@ import type { ExportFormat } from '../api/endpoints';
 import { errorMessage, useToast } from '../lib/toastContext';
 
 const DEFAULT_FORMATS: ExportFormat[] = ['docx', 'pdf', 'pptx'];
+const FORMAT_NAMES: Record<string, string> = { docx: 'Word', pdf: 'PDF', pptx: 'PowerPoint', md: 'Markdown', csv: 'CSV', json: 'JSON' };
 
 export function ExportButtons<F extends string = ExportFormat>({
   onExport,
@@ -18,6 +19,7 @@ export function ExportButtons<F extends string = ExportFormat>({
   const { notify } = useToast();
   return (
     <div className="btn-group" role="group" aria-label={label}>
+      <span className="small muted">Download as</span>
       {formats.map((f) => (
         <button
           key={f}
@@ -25,6 +27,7 @@ export function ExportButtons<F extends string = ExportFormat>({
           className="btn btn-sm"
           disabled={busy !== null}
           aria-busy={busy === f}
+          title={`Download as a ${FORMAT_NAMES[f] ?? f.toUpperCase()} file`}
           onClick={async () => {
             setBusy(f);
             try {
@@ -38,7 +41,7 @@ export function ExportButtons<F extends string = ExportFormat>({
           }}
         >
           <Download size={13} aria-hidden />
-          {f.toUpperCase()}
+          {FORMAT_NAMES[f] ?? f.toUpperCase()}
         </button>
       ))}
     </div>

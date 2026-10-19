@@ -80,19 +80,19 @@ export function AuditTab() {
       <form className="card stack" onSubmit={submit} aria-label="Audit search">
         <div className="form-grid">
           <div className="field">
-            <label htmlFor="au-action">Action (prefix)</label>
+            <label htmlFor="au-action">Action (starts with, e.g. event.)</label>
             <input id="au-action" type="text" placeholder="e.g. narrative." value={draft.action} onChange={(e) => setDraft({ ...draft, action: e.target.value })} />
           </div>
           <div className="field">
-            <label htmlFor="au-rt">Resource type</label>
+            <label htmlFor="au-rt">Item type</label>
             <input id="au-rt" type="text" placeholder="e.g. intel_event" value={draft.resource_type} onChange={(e) => setDraft({ ...draft, resource_type: e.target.value })} />
           </div>
           <div className="field">
-            <label htmlFor="au-rid">Resource id</label>
+            <label htmlFor="au-rid">Item ID</label>
             <input id="au-rid" type="text" value={draft.resource_id} onChange={(e) => setDraft({ ...draft, resource_id: e.target.value })} />
           </div>
           <div className="field">
-            <label htmlFor="au-actor">Actor id</label>
+            <label htmlFor="au-actor">User ID</label>
             <input id="au-actor" type="text" value={draft.actor_id} onChange={(e) => setDraft({ ...draft, actor_id: e.target.value })} />
           </div>
           <div className="field">
@@ -123,26 +123,30 @@ export function AuditTab() {
           </div>
           {can(PERMS.auditExport) ? (
             <ExportButtons
-              label="Export audit log"
+              label="Download activity log"
               formats={['csv', 'json'] as ('csv' | 'json')[]}
               onExport={(f) => api.auditExport(f, { action: query.action, resource_type: query.resource_type, since: query.since, until: query.until })}
             />
           ) : null}
         </div>
       </form>
-      <QueryView query={q} isEmpty={(d) => d.items.length === 0} empty={<div className="card"><EmptyState title="No audit entries match" /></div>}>
+      <QueryView query={q} isEmpty={(d) => d.items.length === 0} empty={
+          <div className="card">
+            <EmptyState title="No activity matches these filters">Clear some filters or widen the dates.</EmptyState>
+          </div>
+        }>
         {(d) => (
           <>
             <div className="table-wrap">
               <table className="table">
-                <caption className="sr-only">Audit log entries</caption>
+                <caption className="sr-only">Activity log entries</caption>
                 <thead>
                   <tr>
                     <th scope="col">#</th>
                     <th scope="col">Time</th>
-                    <th scope="col">Actor</th>
+                    <th scope="col">Who</th>
                     <th scope="col">Action</th>
-                    <th scope="col">Resource</th>
+                    <th scope="col">On what</th>
                     <th scope="col">Reason</th>
                     <th scope="col">Details</th>
                   </tr>

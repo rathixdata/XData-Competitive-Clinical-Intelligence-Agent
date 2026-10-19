@@ -25,19 +25,20 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { WatchlistDetailPage, WatchlistsPage } from './pages/WatchlistsPage';
 
 const TITLES: [RegExp, string][] = [
-  [/^\/$/, 'Portfolio'],
-  [/^\/feed/, 'Intelligence feed'],
-  [/^\/events\//, 'Event detail'],
-  [/^\/landscape/, 'Landscape'],
-  [/^\/assets\//, 'Asset'],
-  [/^\/compare/, 'Compare assets'],
-  [/^\/calendar/, 'Catalyst calendar'],
-  [/^\/ask/, 'Ask the landscape'],
+  [/^\/$/, 'Home'],
+  [/^\/feed/, 'All changes'],
+  [/^\/events\//, 'Change detail'],
+  [/^\/landscape/, 'Competitor landscape'],
+  [/^\/assets\//, 'Drug profile'],
+  [/^\/compare/, 'Compare drugs'],
+  [/^\/calendar/, 'Upcoming milestones'],
+  [/^\/ask/, 'Ask a question'],
   [/^\/briefs/, 'Executive briefs'],
-  [/^\/alerts/, 'Alerts'],
+  [/^\/alerts/, 'Alerts & inbox'],
   [/^\/watchlists/, 'Watchlists'],
-  [/^\/review/, 'Entity review'],
-  [/^\/admin/, 'Administration'],
+  [/^\/review/, 'Data review queue'],
+  [/^\/admin/, 'Settings & data sources'],
+  [/^\/ai-transparency/, 'How the AI works'],
   [/^\/login/, 'Sign in'],
 ];
 

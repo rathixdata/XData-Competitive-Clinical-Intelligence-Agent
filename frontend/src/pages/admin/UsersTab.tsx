@@ -13,7 +13,7 @@ import { useToast } from '../../lib/toastContext';
 function RolePicker({ roles, value, onChange }: { roles: string[]; value: string[]; onChange: (v: string[]) => void }) {
   return (
     <fieldset>
-      <legend>Roles</legend>
+      <legend>Roles (what this person can do)</legend>
       <div className="row">
         {roles
           .filter((r) => r !== 'platform_admin')
@@ -90,9 +90,9 @@ function UserEditor({ user, roles, onClose }: { user: User | null; roles: string
           </div>
           {!user ? (
             <div className="field">
-              <label htmlFor="u-pass">Initial password (optional, min 12)</label>
+              <label htmlFor="u-pass">First password (optional, at least 12 characters)</label>
               <input id="u-pass" type="password" minLength={12} autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-              <span className="hint">Leave blank for SSO-only users.</span>
+              <span className="hint">Leave blank if this person signs in with your company login (single sign-on).</span>
             </div>
           ) : (
             <label className="checkbox">
@@ -129,7 +129,7 @@ export function UsersTab() {
                   <th scope="col">User</th>
                   <th scope="col">Roles</th>
                   <th scope="col">Team</th>
-                  <th scope="col">State</th>
+                  <th scope="col">Status</th>
                   <th scope="col">Last login</th>
                   <th scope="col">Actions</th>
                 </tr>
@@ -167,7 +167,7 @@ export function UsersTab() {
         )}
       </QueryView>
       <section className="card" aria-labelledby="roles-h">
-        <h2 id="roles-h">Role permissions</h2>
+        <h2 id="roles-h">What each role can do</h2>
         <QueryView query={roles}>
           {(r) => {
             const perms = Array.from(new Set(Object.values(r).flat())).sort();

@@ -102,7 +102,7 @@ def alert_payload(db: Session, event: IntelligenceEvent, *, prior_version: int |
         "title": f"{band_prefix} — {event.title}",
         "event_id": str(event.id),
         "event_version": event.version,
-        "affected_assets": [f"{m['asset_name']} (proximity {m['proximity']:.2f})" for m in event.impacted_assets or []],
+        "affected_assets": [f"{m['asset_name']} ({m['proximity']:.0%} similar)" for m in event.impacted_assets or []],
         "verified_change": [c.statement for c in facts if c.section == "what_changed"],
         "why_flagged": why,
         "known": [c.statement for c in facts],

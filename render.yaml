@@ -28,7 +28,7 @@ services:
         generateValue: true
       - key: XDATA_WEBHOOK_SIGNING_SECRET
         generateValue: true
-      # First sign-in. The workspace ID is what you type in the "Workspace" box on the sign-in page.
+      # First sign-in. The workspace ID is what you type in the "Organisation workspace" box on the sign-in page.
       - key: XDATA_BOOTSTRAP_TENANT
         value: my-company
       - key: XDATA_BOOTSTRAP_TENANT_NAME

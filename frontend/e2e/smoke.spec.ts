@@ -1,17 +1,18 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const TENANT = process.env.E2E_TENANT ?? 'demo-oncology';
 const USER = process.env.E2E_USER ?? 'analyst@demo.example';
 const PASSWORD = process.env.E2E_PASSWORD ?? 'ChangeMe-Demo-2026!';
-const SHOTS = process.env.E2E_SCREENSHOT_DIR ?? join(__dirname, 'screenshots');
+const SHOTS = process.env.E2E_SCREENSHOT_DIR ?? join(dirname(fileURLToPath(import.meta.url)), 'screenshots');
 mkdirSync(SHOTS, { recursive: true });
 
 async function login(page: Page) {
   await page.goto('/');
   await expect(page).toHaveURL(/\/login/);
-  await page.getByLabel('Tenant').fill(TENANT);
+  await page.getByLabel('Organisation workspace').fill(TENANT);
   await page.getByLabel('Email').fill(USER);
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
@@ -42,10 +43,10 @@ test('analyst: dashboard -> executive alert event -> evidence -> ask', async ({ 
   await expect(diff.getByRole('row', { name: /Primary completion date/ })).toContainText('2027-11');
   await expect(diff.getByRole('row', { name: /Primary endpoints/ })).toContainText('Progression-Free Survival');
 
-  const path = page.getByRole('list', { name: /Impact path: XD-101 -> competes_with CA-201 -> evaluated_in NCT99000001/ });
+  const path = page.getByRole('list', { name: /Impact path: XD-101 -> competes with CA-201 -> is being tested in NCT99000001/ });
   await expect(path).toBeVisible();
-  await expect(path).toContainText('competes_with');
-  await expect(path).toContainText('evaluated_in');
+  await expect(path).toContainText('competes with');
+  await expect(path).toContainText('is being tested in');
 
   const fact = page.locator('[data-statement-type="FACT"]').first();
   const inference = page.locator('[data-statement-type="INFERENCE"]').first();
@@ -73,8 +74,8 @@ test('analyst: dashboard -> executive alert event -> evidence -> ask', async ({ 
   await expect(drawer).toBeHidden();
 
   // ---- Ask the landscape (streamed)
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Ask' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Ask the landscape' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Ask a question' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Ask a question' })).toBeVisible();
   await page.getByLabel('Your question').fill('What changed this week?');
   await page.getByRole('button', { name: 'Ask', exact: true }).click();
   await expect(page.getByRole('list', { name: 'Answer progress' })).toBeVisible();

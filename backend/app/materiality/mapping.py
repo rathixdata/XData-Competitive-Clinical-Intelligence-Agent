@@ -129,7 +129,7 @@ def map_impacts(db: Session, tenant_id: uuid.UUID, landscape: Landscape, scope: 
             continue
         path = _impact_path(db, tenant_id, cust, via, scope, score, rule_ref, pr)
         rationale = f"{cust.canonical_name} {pr.rationale}" + (f" with {via.canonical_name}" if via else "") + \
-                    f" (proximity {score:.2f}, {basis}-level, rule {rule_ref})"
+                    f" ({score:.0%} similar, compared at {basis} level; rule {rule_ref})"
         out.append(ImpactMapping(cust.id, cust.canonical_name, score, {**pr.to_dict(), "basis": basis,
                                                                         "rule": rule_ref}, path, rationale,
                                  via.id if via else None))

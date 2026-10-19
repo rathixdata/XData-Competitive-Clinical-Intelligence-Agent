@@ -55,7 +55,7 @@ describe('StatementCard', () => {
       </>,
     );
     expect(screen.getByText('Unknown')).toBeInTheDocument();
-    expect(screen.getByText('Recommended investigation')).toBeInTheDocument();
+    expect(screen.getByText('Suggested next step')).toBeInTheDocument();
   });
 
   it('flags a fact without evidence', () => {

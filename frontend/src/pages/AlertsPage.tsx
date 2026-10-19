@@ -10,7 +10,8 @@ import { Modal } from '../components/Dialog';
 import { EmptyState, InlineError, QueryView } from '../components/States';
 import { Tabs } from '../components/Tabs';
 import { useLandscape } from '../state/landscapeContext';
-import { fmtDateTime, fmtRelative, humanize } from '../lib/format';
+import { fmtDateTime, fmtRelative } from '../lib/format';
+import { CADENCE_LABELS, channelLabel, eventTypeLabel, notificationKindLabel, statusLabel } from '../lib/labels';
 import { errorMessage, useToast } from '../lib/toastContext';
 
 function blankPolicy(landscapeId?: string): AlertPolicyInput {
@@ -33,12 +34,12 @@ function PreviewBox({ preview }: { preview: AlertPreview }) {
     <div className="banner banner-info" role="status" aria-live="polite">
       <div>
         <p>
-          <strong>Estimated volume:</strong> about {preview.estimated_deliveries_per_week} deliveries per week ({preview.events_per_week} matching events per week;{' '}
+          <strong>Expected volume:</strong> about {preview.estimated_deliveries_per_week} messages per week ({preview.events_per_week} matching changes per week;{' '}
           {preview.matching_events} matched in the last {preview.window_days} days).
         </p>
         {Object.keys(preview.by_band).length ? (
           <p className="small">
-            By band:{' '}
+            By priority:{' '}
             {Object.entries(preview.by_band)
               .map(([k, v]) => `${k} ${v}`)
               .join(', ')}
@@ -73,7 +74,7 @@ function PolicyForm({ initial, policyId, onClose }: { initial: AlertPolicyInput;
   const save = useMutation({
     mutationFn: () => (policyId ? api.updatePolicy(policyId, body()) : api.createPolicy(body())),
     onSuccess: () => {
-      notify(policyId ? 'Policy updated' : 'Policy created');
+      notify(policyId ? 'Alert rule updated' : 'Alert rule created');
       void qc.invalidateQueries({ queryKey: ['policies'] });
       onClose();
     },
@@ -85,17 +86,17 @@ function PolicyForm({ initial, policyId, onClose }: { initial: AlertPolicyInput;
       open
       wide
       onClose={onClose}
-      title={policyId ? 'Edit alert policy' : 'New alert policy'}
+      title={policyId ? 'Edit alert rule' : 'New alert rule'}
       footer={
         <>
-          <button type="button" className="btn" onClick={() => preview.mutate()} disabled={preview.isPending}>
-            Preview volume
+          <button type="button" className="btn" onClick={() => preview.mutate()} disabled={preview.isPending} title="Estimate how many alerts this rule would send per week">
+            Estimate volume
           </button>
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
           <button type="submit" form="policy-form" className="btn btn-primary" disabled={!p.name.trim() || p.channels.length === 0 || save.isPending}>
-            Save policy
+            Save alert rule
           </button>
         </>
       }
@@ -109,16 +110,19 @@ function PolicyForm({ initial, policyId, onClose }: { initial: AlertPolicyInput;
         }}
       >
         <InlineError error={save.error ?? preview.error} />
+        <p className="small muted" style={{ margin: 0 }}>
+          An alert rule decides which changes you are told about, how often, and where (in-app, email, Slack...). Use &ldquo;Estimate volume&rdquo; to avoid too many alerts.
+        </p>
         {preview.data ? <PreviewBox preview={preview.data} /> : null}
         <div className="form-grid">
           <div className="field">
-            <label htmlFor="ap-name">Name</label>
+            <label htmlFor="ap-name">Rule name</label>
             <input id="ap-name" type="text" required value={p.name} onChange={(e) => setP({ ...p, name: e.target.value })} data-autofocus />
           </div>
           <div className="field">
-            <label htmlFor="ap-ls">Landscape</label>
+            <label htmlFor="ap-ls">Market (landscape)</label>
             <select id="ap-ls" value={p.landscape_id ?? ''} onChange={(e) => setP({ ...p, landscape_id: e.target.value || null })}>
-              <option value="">All landscapes</option>
+              <option value="">All markets</option>
               {landscapes.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
@@ -127,15 +131,15 @@ function PolicyForm({ initial, policyId, onClose }: { initial: AlertPolicyInput;
             </select>
           </div>
           <div className="field">
-            <label htmlFor="ap-cad">Cadence</label>
+            <label htmlFor="ap-cad">How often</label>
             <select id="ap-cad" value={p.cadence} onChange={(e) => setP({ ...p, cadence: e.target.value as AlertPolicyInput['cadence'] })}>
-              <option value="immediate">Immediate</option>
+              <option value="immediate">Immediately</option>
               <option value="daily">Daily digest</option>
               <option value="weekly">Weekly digest</option>
             </select>
           </div>
           <div className="field">
-            <label htmlFor="ap-min">Minimum materiality score</label>
+            <label htmlFor="ap-min">Minimum importance score (0-100)</label>
             <input id="ap-min" type="number" min={0} max={100} value={p.min_score} onChange={(e) => setP({ ...p, min_score: Number(e.target.value) })} />
           </div>
           <div className="field">
@@ -150,11 +154,11 @@ function PolicyForm({ initial, policyId, onClose }: { initial: AlertPolicyInput;
             </select>
           </div>
           <label className="checkbox">
-            <input type="checkbox" checked={p.active} onChange={(e) => setP({ ...p, active: e.target.checked })} /> Active
+            <input type="checkbox" checked={p.active} onChange={(e) => setP({ ...p, active: e.target.checked })} /> Rule is switched on
           </label>
         </div>
         <fieldset>
-          <legend>Event types (none selected = all)</legend>
+          <legend>Kinds of change (leave all unticked for every kind)</legend>
           <div className="row">
             {(facets.data?.type ?? []).map((t) => (
               <label key={t.value} className="checkbox">
@@ -163,18 +167,18 @@ function PolicyForm({ initial, policyId, onClose }: { initial: AlertPolicyInput;
                   checked={p.event_types.includes(t.value)}
                   onChange={(e) => setP({ ...p, event_types: e.target.checked ? [...p.event_types, t.value] : p.event_types.filter((x) => x !== t.value) })}
                 />
-                {humanize(t.value)}
+                {eventTypeLabel(t.value)}
               </label>
             ))}
           </div>
         </fieldset>
         <fieldset>
-          <legend>Channels</legend>
+          <legend>Where to send alerts</legend>
           <div className="row">
             {CHANNELS.map((c) => (
               <label key={c} className="checkbox">
                 <input type="checkbox" checked={p.channels.includes(c)} onChange={() => toggleChannel(c)} />
-                {c === 'web' ? 'In-app (web)' : humanize(c)}
+                {channelLabel(c)}
               </label>
             ))}
           </div>
@@ -211,7 +215,7 @@ function PolicyForm({ initial, policyId, onClose }: { initial: AlertPolicyInput;
             </div>
           ) : null}
         </div>
-        {policyId ? <p className="small muted">Webhook URLs are stored encrypted and never shown again; re-enter them when editing a policy that uses them.</p> : null}
+        {policyId ? <p className="small muted">For security, Slack/Teams/webhook addresses are stored encrypted and never shown again; re-enter them when editing this rule.</p> : null}
       </form>
     </Modal>
   );
@@ -243,7 +247,7 @@ function Policies() {
   const test = useMutation({
     mutationFn: (id: string) => api.testPolicy(id),
     onSuccess: (r) => {
-      notify(`Test sent: ${Object.entries(r.results).map(([k, v]) => `${k} ${v}`).join(', ')}`);
+      notify(`Test sent: ${Object.entries(r.results).map(([k, v]) => `${channelLabel(k)} ${v}`).join(', ')}`);
       void qc.invalidateQueries({ queryKey: ['inbox'] });
       void qc.invalidateQueries({ queryKey: ['deliveries'] });
     },
@@ -252,7 +256,7 @@ function Policies() {
   const del = useMutation({
     mutationFn: (id: string) => api.deletePolicy(id),
     onSuccess: () => {
-      notify('Policy deactivated');
+      notify('Alert rule switched off');
       void qc.invalidateQueries({ queryKey: ['policies'] });
     },
     onError: (e) => notify(errorMessage(e), 'error'),
@@ -263,24 +267,30 @@ function Policies() {
       {canWrite ? (
         <div>
           <button type="button" className="btn btn-primary" onClick={() => setEditing({ initial: blankPolicy(landscapeId) })}>
-            <Plus size={15} aria-hidden /> New policy
+            <Plus size={15} aria-hidden /> New alert rule
           </button>
         </div>
       ) : null}
-      <QueryView query={q} isEmpty={(d) => d.length === 0} empty={<div className="card"><EmptyState title="No alert policies">Create one to be notified about material developments.</EmptyState></div>}>
+      <QueryView query={q} isEmpty={(d) => d.length === 0} empty={
+          <div className="card">
+            <EmptyState title="No alert rules yet">
+              {canWrite ? 'Click "New alert rule" to be told (in-app, by email, Slack or Teams) when an important change happens.' : 'Ask an analyst to set up an alert rule for you.'}
+            </EmptyState>
+          </div>
+        }>
         {(items) => (
           <div className="table-wrap">
             <table className="table">
-              <caption className="sr-only">Your alert policies</caption>
+              <caption className="sr-only">Your alert rules</caption>
               <thead>
                 <tr>
-                  <th scope="col">Policy</th>
-                  <th scope="col">Cadence</th>
-                  <th scope="col" className="num">
-                    Min score
+                  <th scope="col">Rule</th>
+                  <th scope="col">How often</th>
+                  <th scope="col" className="num" title="Minimum importance score (0-100)">
+                    Min. score
                   </th>
-                  <th scope="col">Channels</th>
-                  <th scope="col">State</th>
+                  <th scope="col">Sent to</th>
+                  <th scope="col">Status</th>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
@@ -289,14 +299,14 @@ function Policies() {
                   <tr key={pol.id}>
                     <td>
                       <strong>{pol.name}</strong>
-                      {pol.event_types?.length ? <div className="tiny muted">{pol.event_types.map(humanize).join(', ')}</div> : null}
+                      {pol.event_types?.length ? <div className="tiny muted">{pol.event_types.map(eventTypeLabel).join(', ')}</div> : null}
                     </td>
-                    <td>{pol.cadence}</td>
+                    <td>{CADENCE_LABELS[pol.cadence] ?? pol.cadence}</td>
                     <td className="num">{pol.min_score}</td>
                     <td>
                       {pol.channels.map((c) => (
                         <span key={c} className="badge badge-neutral" style={{ marginRight: 4 }}>
-                          {c}
+                          {channelLabel(c)}
                           {c !== 'web' && c !== 'email' && pol.destinations[`${c === 'webhook' ? 'webhook_url' : `${c}_webhook`}` as 'slack_webhook'] ? ' (configured)' : ''}
                         </span>
                       ))}
@@ -310,12 +320,12 @@ function Policies() {
                           <button type="button" className="btn btn-sm" onClick={() => setEditing({ initial: toInput(pol), id: pol.id })} aria-label={`Edit ${pol.name}`}>
                             <Pencil size={13} aria-hidden /> Edit
                           </button>
-                          <button type="button" className="btn btn-sm" onClick={() => test.mutate(pol.id)} disabled={test.isPending} aria-label={`Send test for ${pol.name}`}>
-                            <FlaskConical size={13} aria-hidden /> Test
+                          <button type="button" className="btn btn-sm" onClick={() => test.mutate(pol.id)} disabled={test.isPending} aria-label={`Send a test alert for ${pol.name}`} title="Send a test message to check the rule works">
+                            <FlaskConical size={13} aria-hidden /> Send test
                           </button>
                           {pol.active ? (
-                            <button type="button" className="btn btn-sm" onClick={() => del.mutate(pol.id)} aria-label={`Deactivate ${pol.name}`}>
-                              <Trash2 size={13} aria-hidden /> Deactivate
+                            <button type="button" className="btn btn-sm" onClick={() => del.mutate(pol.id)} aria-label={`Switch off ${pol.name}`} title="Stop sending alerts for this rule">
+                              <Trash2 size={13} aria-hidden /> Switch off
                             </button>
                           ) : null}
                         </div>
@@ -349,7 +359,9 @@ function Deliveries() {
             }}>
             <option value="">Any</option>
             {['pending', 'sent', 'failed', 'dead', 'read'].map((s) => (
-              <option key={s}>{s}</option>
+              <option key={s} value={s}>
+                {statusLabel(s)}
+              </option>
             ))}
           </select>
         </div>
@@ -361,29 +373,35 @@ function Deliveries() {
             }}>
             <option value="">Any</option>
             {CHANNELS.map((c) => (
-              <option key={c}>{c}</option>
+              <option key={c} value={c}>
+                {channelLabel(c)}
+              </option>
             ))}
           </select>
         </div>
       </div>
-      <QueryView query={q} isEmpty={(d) => d.items.length === 0} empty={<div className="card"><EmptyState title="No deliveries yet" /></div>}>
+      <QueryView query={q} isEmpty={(d) => d.items.length === 0} empty={
+          <div className="card">
+            <EmptyState title="No alerts sent yet">Every alert message the system sends (in-app, email, Slack, Teams) is logged here, including failures.</EmptyState>
+          </div>
+        }>
         {(d) => (
           <>
             <div className="table-wrap">
               <table className="table">
-                <caption className="sr-only">Delivery history</caption>
+                <caption className="sr-only">Sent alerts log</caption>
                 <thead>
                   <tr>
                     <th scope="col">Created</th>
-                    <th scope="col">Title</th>
-                    <th scope="col">Kind</th>
-                    <th scope="col">Channel</th>
+                    <th scope="col">Message</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Sent via</th>
                     <th scope="col">Status</th>
                     <th scope="col" className="num">
                       Attempts
                     </th>
                     <th scope="col">Sent</th>
-                    <th scope="col">Last error</th>
+                    <th scope="col">Problem (if any)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -391,8 +409,8 @@ function Deliveries() {
                     <tr key={n.id}>
                       <td className="nowrap">{fmtDateTime(n.created_at)}</td>
                       <td>{n.payload.title ?? '-'}</td>
-                      <td>{n.kind}</td>
-                      <td>{n.channel}</td>
+                      <td>{notificationKindLabel(n.kind)}</td>
+                      <td>{channelLabel(n.channel)}</td>
                       <td>
                         <StatusBadge status={n.status} />
                       </td>
@@ -434,7 +452,7 @@ function Inbox() {
     <div className="stack">
       <div className="row-between">
         <label className="checkbox">
-          <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} /> Unread only
+          <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} /> Show unread only
         </label>
         {(q.data ?? []).some((n) => n.status !== 'read') ? (
           <button
@@ -445,11 +463,17 @@ function Inbox() {
               void qc.invalidateQueries({ queryKey: ['inbox'] });
             }}
           >
-            Mark all read
+            Mark all as read
           </button>
         ) : null}
       </div>
-      <QueryView query={{ ...q, data: q.data ? items : undefined }} isEmpty={(d) => d.length === 0} empty={<div className="card"><EmptyState title="Inbox is empty" /></div>}>
+      <QueryView query={{ ...q, data: q.data ? items : undefined }} isEmpty={(d) => d.length === 0} empty={
+          <div className="card">
+            <EmptyState title={unreadOnly ? 'No unread notifications' : 'Your inbox is empty'}>
+              Notifications from your alert rules, and changes escalated to you, will appear here. Set up rules in the &ldquo;Alert rules&rdquo; tab.
+            </EmptyState>
+          </div>
+        }>
         {(list) => (
           <ul className="list-plain card">
             {list.map((n) => {
@@ -459,7 +483,7 @@ function Inbox() {
                   <div className="stack-sm" style={{ gap: 2, minWidth: 0 }}>
                     <div className="row">
                       {n.status !== 'read' ? <span className="badge badge-info">Unread</span> : <span className="badge badge-neutral">Read</span>}
-                      <span className="badge badge-neutral">{n.kind}</span>
+                      <span className="badge badge-neutral">{notificationKindLabel(n.kind)}</span>
                       <span className="small muted">{fmtRelative(n.created_at)}</span>
                     </div>
                     {evId ? (
@@ -469,7 +493,7 @@ function Inbox() {
                     ) : (
                       <span className="strong">{n.payload.title ?? 'Notification'}</span>
                     )}
-                    {n.payload.note ? <span className="small">Note: {n.payload.note}</span> : null}
+                    {n.payload.note ? <span className="small">Note from colleague: {n.payload.note}</span> : null}
                     {n.payload.verified_change?.length ? <span className="small muted">{n.payload.verified_change.join(' ')}</span> : null}
                   </div>
                   {n.status !== 'read' ? (
@@ -495,9 +519,12 @@ export function AlertsPage() {
       <div className="page-header">
         <div>
           <h1>
-            <BellRing size={20} aria-hidden /> Alerts
+            <BellRing size={20} aria-hidden /> Alerts &amp; inbox
           </h1>
-          <p>Route the right intelligence to the right person: policies, delivery history and your in-app inbox.</p>
+          <p>
+            Your notifications, plus the alert rules that decide which important changes you (or your team) are told about, how often, and where - in the app, by email, Slack
+            or Teams.
+          </p>
         </div>
       </div>
       <Tabs
@@ -505,11 +532,18 @@ export function AlertsPage() {
         active={tab}
         onChange={(t) => setSp({ tab: t }, { replace: true })}
         tabs={[
-          { id: 'inbox', label: 'Inbox' },
-          { id: 'policies', label: 'Policies' },
-          { id: 'deliveries', label: 'Delivery history' },
+          { id: 'inbox', label: 'My inbox' },
+          { id: 'policies', label: 'Alert rules' },
+          { id: 'deliveries', label: 'Sent alerts log' },
         ]}
       />
+      <p className="small muted tab-intro">
+        {tab === 'inbox'
+          ? 'Notifications sent to you inside the app. Click one to open the change it is about.'
+          : tab === 'policies'
+            ? 'Rules that decide which changes trigger an alert, how often, and where it is sent.'
+            : 'A record of every alert message sent, and whether it was delivered.'}
+      </p>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
         {tab === 'inbox' ? <Inbox /> : tab === 'policies' ? <Policies /> : <Deliveries />}
       </div>

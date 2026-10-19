@@ -15,8 +15,8 @@ function validationText(s: Statement): string | null {
   if (!v || v === 'not_applicable') return null;
   if (v === 'supported') return 'Evidence check: supported';
   if (v === 'partially_supported') return 'Evidence check: partially supported';
-  if (v === 'unsupported') return 'Evidence check: unsupported';
-  if (v === 'analyst_asserted') return 'Analyst-asserted';
+  if (v === 'unsupported') return 'Evidence check: not supported';
+  if (v === 'analyst_asserted') return 'Stated by an analyst';
   return `Evidence check: ${v.replace(/_/g, ' ')}`;
 }
 
@@ -27,6 +27,7 @@ export function StatementLabel({ type }: { type: string }) {
     <span className="stmt-label" title={meta.description}>
       <Icon size={14} aria-hidden />
       {meta.label}
+      <span className="sr-only"> - {meta.description}</span>
     </span>
   );
 }
@@ -45,7 +46,7 @@ export function StatementCard({ statement, evidence, onOpenEvidence, reviewStatu
       </div>
       <p className="stmt-text">{statement.statement}</p>
       <div className="stmt-meta">
-        {vt ? <span>{vt}</span> : null}
+        {vt ? <span title="Automatic check that the cited source really says this">{vt}</span> : null}
         {statement.original_statement_type && statement.original_statement_type !== statement.statement_type ? (
           <span>(re-typed from {statementMeta(statement.original_statement_type).label} by validator)</span>
         ) : null}
@@ -56,7 +57,7 @@ export function StatementCard({ statement, evidence, onOpenEvidence, reviewStatu
               const link = evidence?.[id];
               if (!onOpenEvidence) {
                 return (
-                  <span key={id} className="badge badge-neutral" title="Evidence reference (open the event for source details)">
+                  <span key={id} className="badge badge-neutral" title="Source reference (open the change to see the source)">
                     {id}
                   </span>
                 );
@@ -69,6 +70,7 @@ export function StatementCard({ statement, evidence, onOpenEvidence, reviewStatu
                   disabled={!link}
                   onClick={() => link && onOpenEvidence(link)}
                   aria-label={`Open evidence ${id}${link?.title ? `: ${link.title}` : ''}`}
+                  title="Show the source passage behind this statement"
                 >
                   <FileSearch size={12} aria-hidden />
                   {id}
@@ -77,7 +79,7 @@ export function StatementCard({ statement, evidence, onOpenEvidence, reviewStatu
             })}
           </span>
         ) : isFact ? (
-          <span className="badge badge-danger">No evidence cited</span>
+          <span className="badge badge-danger" title="This fact does not cite a source; treat it with caution">No evidence cited</span>
         ) : null}
       </div>
     </article>
@@ -86,12 +88,14 @@ export function StatementCard({ statement, evidence, onOpenEvidence, reviewStatu
 
 export function StatementLegend() {
   return (
-    <div className="legend" aria-label="Statement type legend">
+    <div className="legend" role="note" aria-label="How to read these statements">
+      <span className="strong">How to read this:</span>
       {Object.entries(STATEMENT_META).map(([k, m]) => {
         const Icon = m.icon;
         return (
-          <span key={k} className={`stmt-label`} style={{ color: `var(--${k === 'FACT' ? 'fact' : k === 'INFERENCE' ? 'infer' : k === 'UNKNOWN' ? 'unknown' : 'invest'}-fg)` }}>
+          <span key={k} className="stmt-label" title={m.description} style={{ color: `var(--${k === 'FACT' ? 'fact' : k === 'INFERENCE' ? 'infer' : k === 'UNKNOWN' ? 'unknown' : 'invest'}-fg)` }}>
             <Icon size={13} aria-hidden /> {m.label}
+            <span className="sr-only"> - {m.description}</span>
           </span>
         );
       })}

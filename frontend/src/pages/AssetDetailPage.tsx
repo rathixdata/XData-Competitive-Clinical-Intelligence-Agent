@@ -10,6 +10,7 @@ import { Modal } from '../components/Dialog';
 import { EmptyState, ErrorState, InlineError, Loading } from '../components/States';
 import { catalystDate, previousDate } from '../lib/catalyst';
 import { fmtDate, fmtDateTime, fmtValue, humanize, shortId } from '../lib/format';
+import { entityTypeLabel, eventTypeLabel } from '../lib/labels';
 import { useToast } from '../lib/toastContext';
 
 function toInput(v: unknown, type: ProfileField['field_type']): string {
@@ -44,7 +45,7 @@ function ProfileEditor({ asset, fields, onClose }: { asset: Asset; fields: Profi
       return api.patchProfile(asset.id, profile, reason);
     },
     onSuccess: () => {
-      notify('Profile saved as a new version');
+      notify('Profile saved (previous version kept)');
       void qc.invalidateQueries({ queryKey: ['asset', asset.id] });
       void qc.invalidateQueries({ queryKey: ['profile-versions', asset.id] });
       onClose();
@@ -62,7 +63,7 @@ function ProfileEditor({ asset, fields, onClose }: { asset: Asset; fields: Profi
             Cancel
           </button>
           <button type="submit" form="profile-form" className="btn btn-primary" disabled={m.isPending}>
-            Save new version
+            Save profile
           </button>
         </>
       }
@@ -110,7 +111,7 @@ function ProfileEditor({ asset, fields, onClose }: { asset: Asset; fields: Profi
           })}
         </div>
         <div className="field">
-          <label htmlFor="pf-reason">Reason for change</label>
+          <label htmlFor="pf-reason">Reason for the change (kept in the history)</label>
           <input id="pf-reason" type="text" value={reason} onChange={(e) => setReason(e.target.value)} />
         </div>
       </form>
@@ -119,7 +120,7 @@ function ProfileEditor({ asset, fields, onClose }: { asset: Asset; fields: Profi
 }
 
 function VersionList({ versions }: { versions: ProfileVersion[] }) {
-  if (versions.length === 0) return <p className="small muted">No versions recorded.</p>;
+  if (versions.length === 0) return <p className="small muted">No earlier versions. Each time someone edits this profile, the previous version is kept here.</p>;
   return (
     <ol className="list-plain">
       {versions.map((v, i) => {
@@ -157,7 +158,7 @@ export function AssetDetailPage() {
   const q = useQuery({ queryKey: ['asset', id], queryFn: () => api.asset(id) });
   const versions = useQuery({ queryKey: ['profile-versions', id], queryFn: () => api.profileVersions(id) });
   const fields = useQuery({ queryKey: ['profile-fields'], queryFn: api.profileFields, staleTime: 10 * 60_000 });
-  if (q.isLoading) return <Loading label="Loading asset" />;
+  if (q.isLoading) return <Loading label="Loading drug profile" />;
   if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data) return null;
   const { asset, company, trials, publications, regulatory_events, catalysts, timeline } = q.data;
@@ -169,19 +170,28 @@ export function AssetDetailPage() {
       <div className="page-header">
         <div>
           <div className="row">
-            {asset.is_internal ? <span className="badge badge-danger">Your asset (internal)</span> : <span className="badge badge-neutral">Competitor asset</span>}
-            {asset.stage ? <span className="badge badge-neutral">{asset.stage}</span> : null}
-            <span className="badge badge-neutral">Profile v{asset.profile_version}</span>
+            {asset.is_internal ? <span className="badge badge-danger">Your drug</span> : <span className="badge badge-neutral">Competitor drug</span>}
+            {asset.stage ? (
+              <span className="badge badge-neutral" title="Development stage">
+                {asset.stage}
+              </span>
+            ) : null}
+            <span className="badge badge-neutral" title="The profile has been edited this many times">
+              Profile version {asset.profile_version}
+            </span>
           </div>
           <h1 style={{ marginTop: 6 }}>{asset.canonical_name}</h1>
-          <p>{[company?.canonical_name, asset.modality].filter(Boolean).join(' - ') || 'No company recorded'}</p>
+          <p>
+            {[company?.canonical_name, asset.modality].filter(Boolean).join(' - ') || 'No company recorded'}. Everything we know about this drug: profile, trials, publications,
+            regulatory history and upcoming milestones.
+          </p>
         </div>
         <div className="btn-group">
           <Link className="btn" to={`/feed?asset_id=${asset.id}&asset_name=${encodeURIComponent(asset.canonical_name)}`}>
-            Related events
+            Changes involving this drug
           </Link>
           <Link className="btn" to={`/compare?ids=${asset.id}`}>
-            <Columns3 size={15} aria-hidden /> Compare
+            <Columns3 size={15} aria-hidden /> Compare with others
           </Link>
           {can(PERMS.landscapeWrite) ? (
             <button type="button" className="btn btn-primary" onClick={() => setEditing(true)}>
@@ -195,7 +205,7 @@ export function AssetDetailPage() {
           <section className="card" aria-labelledby="prof-h">
             <h2 id="prof-h">Profile</h2>
             {orderedKeys.length === 0 ? (
-              <EmptyState title="No profile attributes" />
+              <EmptyState title="No profile details yet">{can(PERMS.landscapeWrite) ? 'Click "Edit profile" to add mechanism, stage, disease and more.' : 'Profile details will appear once they are added.'}</EmptyState>
             ) : (
               <dl className="kv">
                 {orderedKeys.map((k) => (
@@ -207,14 +217,14 @@ export function AssetDetailPage() {
               </dl>
             )}
             <p className="tiny muted" style={{ marginTop: 8 }}>
-              {asset.is_internal ? 'Internal profile maintained by your team.' : 'Curated public profile; trial fields in the landscape matrix come from source snapshots.'}
+              {asset.is_internal ? 'Internal profile maintained by your team (not visible to anyone outside your organisation).' : 'Curated public profile. Trial details in the comparison table come directly from the trial registry.'}
             </p>
           </section>
 
           <section className="card" aria-labelledby="trials-h">
             <h2 id="trials-h">Trials ({trials.length})</h2>
             {trials.length === 0 ? (
-              <EmptyState title="No linked trials" />
+              <EmptyState title="No trials linked to this drug">Trials appear here when ClinicalTrials.gov lists this drug.</EmptyState>
             ) : (
               <div className="table-wrap">
                 <table className="table">
@@ -226,7 +236,9 @@ export function AssetDetailPage() {
                       <th scope="col" className="num">
                         Enrollment
                       </th>
-                      <th scope="col">Primary completion</th>
+                      <th scope="col" title="When the main results are expected to be collected">
+                        Primary completion
+                      </th>
                       <th scope="col">Primary endpoint(s)</th>
                     </tr>
                   </thead>
@@ -254,9 +266,9 @@ export function AssetDetailPage() {
           </section>
 
           <section className="card" aria-labelledby="tl-h">
-            <h2 id="tl-h">Timeline</h2>
+            <h2 id="tl-h">History</h2>
             {timeline.length === 0 ? (
-              <EmptyState title="No timeline entries" />
+              <EmptyState title="No history yet">Detected changes, publications and regulatory events for this drug will be listed here in date order.</EmptyState>
             ) : (
               <ol className="list-plain">
                 {timeline.map((t) => (
@@ -264,7 +276,7 @@ export function AssetDetailPage() {
                     <span className="nowrap small strong" style={{ minWidth: 100 }}>
                       {fmtDate(t.date)}
                     </span>
-                    <span className="badge badge-neutral">{t.kind}</span>
+                    <span className="badge badge-neutral">{entityTypeLabel(t.kind)}</span>
                     {t.band ? <BandBadge band={t.band} /> : null}
                     {t.kind === 'event' ? <Link to={`/events/${t.id}`}>{t.title}</Link> : <span>{t.title}</span>}
                   </li>
@@ -275,9 +287,9 @@ export function AssetDetailPage() {
         </div>
         <div className="stack" style={{ gap: 16, minWidth: 0 }}>
           <section className="card" aria-labelledby="cat-h">
-            <h2 id="cat-h">Catalysts</h2>
+            <h2 id="cat-h">Upcoming milestones</h2>
             {catalysts.length === 0 ? (
-              <p className="small muted">No catalysts.</p>
+              <p className="small muted">No upcoming milestones known.</p>
             ) : (
               <ul className="list-plain">
                 {catalysts.map((c) => (
@@ -296,7 +308,7 @@ export function AssetDetailPage() {
           <section className="card" aria-labelledby="pub-h">
             <h2 id="pub-h">Publications ({publications.length})</h2>
             {publications.length === 0 ? (
-              <p className="small muted">No linked publications.</p>
+              <p className="small muted">No publications found for this drug yet.</p>
             ) : (
               <ul className="list-plain">
                 {publications.map((p) => (
@@ -318,21 +330,21 @@ export function AssetDetailPage() {
             )}
           </section>
           <section className="card" aria-labelledby="reg-h">
-            <h2 id="reg-h">Regulatory events</h2>
+            <h2 id="reg-h">FDA and regulatory history</h2>
             {regulatory_events.length === 0 ? (
-              <p className="small muted">No regulatory events.</p>
+              <p className="small muted">No approvals or label changes recorded.</p>
             ) : (
               <ul className="list-plain">
                 {regulatory_events.map((r) => (
                   <li key={r.id} className="small">
-                    <strong>{fmtDate(r.event_date)}</strong> {humanize(r.event_type)} - {r.product_name}
+                    <strong>{fmtDate(r.event_date)}</strong> {eventTypeLabel(r.event_type)} - {r.product_name}
                   </li>
                 ))}
               </ul>
             )}
           </section>
           <section className="card" aria-labelledby="ver-h">
-            <h2 id="ver-h">Profile versions</h2>
+            <h2 id="ver-h">Profile edit history</h2>
             {versions.isLoading ? <Loading /> : versions.error ? <ErrorState error={versions.error} /> : <VersionList versions={versions.data ?? []} />}
           </section>
         </div>

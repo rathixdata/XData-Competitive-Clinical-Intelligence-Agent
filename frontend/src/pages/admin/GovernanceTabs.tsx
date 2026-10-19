@@ -13,7 +13,7 @@ export function ModelsTab() {
       {(m) => (
         <div className="grid grid-2">
           <section className="card" aria-labelledby="mc-h">
-            <h2 id="mc-h">Model configuration</h2>
+            <h2 id="mc-h">AI model settings</h2>
             <dl className="kv small">
               {Object.entries(m.config).map(([k, v]) => (
                 <div key={k} style={{ display: 'contents' }}>
@@ -24,14 +24,16 @@ export function ModelsTab() {
             </dl>
           </section>
           <section className="card" aria-labelledby="pv-h">
-            <h2 id="pv-h">Prompt / workflow versions</h2>
+            <h2 id="pv-h">AI instruction (prompt) versions</h2>
             <div className="table-wrap">
               <table className="table">
                 <thead>
                   <tr>
-                    <th scope="col">Workflow</th>
+                    <th scope="col">AI task</th>
                     <th scope="col">Version</th>
-                    <th scope="col">Hash</th>
+                    <th scope="col" title="Fingerprint of the exact instructions used">
+                      Fingerprint
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -49,16 +51,16 @@ export function ModelsTab() {
             </div>
           </section>
           <section className="card" aria-labelledby="mu-h" style={{ gridColumn: '1 / -1' }}>
-            <h2 id="mu-h">Generation usage (30 days)</h2>
+            <h2 id="mu-h">AI runs in the last 30 days</h2>
             {m.usage_30d.length === 0 ? (
-              <EmptyState title="No generations recorded" />
+              <EmptyState title="No AI runs yet">Each time the AI writes a summary, answer or brief it is counted here.</EmptyState>
             ) : (
               <div className="table-wrap">
                 <table className="table">
                   <thead>
                     <tr>
-                      <th scope="col">Workflow</th>
-                      <th scope="col">Served model</th>
+                      <th scope="col">AI task</th>
+                      <th scope="col">Model used</th>
                       <th scope="col">Status</th>
                       <th scope="col" className="num">
                         Calls
@@ -120,14 +122,14 @@ function SettingsForm({ data }: { data: TenantSettings }) {
         m.mutate();
       }}
     >
-      <h2>Tenant settings: {data.tenant.name}</h2>
+      <h2>Settings for {data.tenant.name}</h2>
       <InlineError error={m.error} />
       <div className="field" style={{ maxWidth: 280 }}>
-        <label htmlFor="st-budget">Monthly LLM budget (USD)</label>
+        <label htmlFor="st-budget">Monthly AI budget (USD)</label>
         <input id="st-budget" type="number" min={0} value={budget} onChange={(e) => setBudget(e.target.value)} />
       </div>
       <fieldset>
-        <legend>Retention by data class (days, minimum 7; blank = platform default)</legend>
+        <legend>How long to keep each kind of data (days, minimum 7; leave blank for the default)</legend>
         <div className="form-grid">
           {RETENTION.map((k) => (
             <div className="field" key={k}>
@@ -160,7 +162,7 @@ export function UsageTab() {
   return (
     <div className="stack">
       <div className="field" style={{ maxWidth: 200 }}>
-        <label htmlFor="us-days">Window</label>
+        <label htmlFor="us-days">Period</label>
         <select id="us-days" value={days} onChange={(e) => setDays(Number(e.target.value))}>
           {[7, 30, 90, 365].map((d) => (
             <option key={d} value={d}>
@@ -177,7 +179,7 @@ export function UsageTab() {
               <div className="grid grid-3">
                 <div className="card stat">
                   <span className="value">${total.toFixed(2)}</span>
-                  <span className="label">Spend in window</span>
+                  <span className="label">Spent in this period</span>
                 </div>
                 <div className="card stat">
                   <span className="value">{u.budget_usd !== null ? `$${u.budget_usd}` : '-'}</span>
@@ -190,7 +192,7 @@ export function UsageTab() {
               </div>
               {u.items.length === 0 ? (
                 <div className="card">
-                  <EmptyState title="No metered usage in this window" />
+                  <EmptyState title="No AI usage in this period">Try a longer period.</EmptyState>
                 </div>
               ) : (
                 <div className="table-wrap">
@@ -198,8 +200,8 @@ export function UsageTab() {
                     <caption className="sr-only">Usage by component</caption>
                     <thead>
                       <tr>
-                        <th scope="col">Kind</th>
-                        <th scope="col">Component</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Used by</th>
                         <th scope="col">Model</th>
                         <th scope="col" className="num">
                           Input units

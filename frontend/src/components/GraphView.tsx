@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Graph, GraphNode } from '../api/types';
 import { layoutGraph, NODE_COLORS, nodeColor } from '../lib/graphLayout';
+import { entityTypeLabel, humanizeEnum, predicateLabel, roleLabel } from '../lib/labels';
 
 const W = 900;
 const H = 620;
@@ -27,7 +28,7 @@ export function GraphView({ graph, onActivate }: { graph: Graph; onActivate?: (n
   return (
     <div className="stack">
       <fieldset>
-        <legend>Node types (toggle to show or hide)</legend>
+        <legend>Show or hide on the map</legend>
         <div className="legend">
           {types.map((t) => (
             <label key={t} className="checkbox">
@@ -46,14 +47,14 @@ export function GraphView({ graph, onActivate }: { graph: Graph; onActivate?: (n
               <svg width="12" height="12" aria-hidden>
                 <circle cx="6" cy="6" r="5" fill={NODE_COLORS[t] ?? NODE_COLORS.other} />
               </svg>
-              {t.replace(/_/g, ' ')} ({graph.nodes.filter((n) => n.type === t).length})
+              {entityTypeLabel(t)} ({graph.nodes.filter((n) => n.type === t).length})
             </label>
           ))}
           <span className="row" style={{ gap: 4 }}>
             <svg width="14" height="14" aria-hidden>
               <circle cx="7" cy="7" r="5" fill={NODE_COLORS.asset} stroke={NODE_COLORS.customer} strokeWidth="3" />
             </svg>
-            Your (customer) asset - double ring
+            Your drug (double ring)
           </span>
         </div>
       </fieldset>
@@ -77,7 +78,7 @@ export function GraphView({ graph, onActivate }: { graph: Graph; onActivate?: (n
                   strokeDasharray={e.status === 'verified' || e.method === 'source' ? undefined : '4 3'}
                   opacity={dim ? 0.15 : 0.8}
                 >
-                  <title>{e.predicate}</title>
+                  <title>{predicateLabel(e.predicate)}</title>
                 </line>
               );
             })}
@@ -97,7 +98,7 @@ export function GraphView({ graph, onActivate }: { graph: Graph; onActivate?: (n
                   transform={`translate(${p.x},${p.y})`}
                   tabIndex={0}
                   role="button"
-                  aria-label={`${n.type.replace(/_/g, ' ')}: ${n.label}${isCustomer ? ' (your asset)' : ''}`}
+                  aria-label={`${entityTypeLabel(n.type)}: ${n.label}${isCustomer ? ' (your drug)' : ''}`}
                   opacity={dim ? 0.3 : 1}
                   onMouseEnter={() => setFocus(n)}
                   onFocus={() => setFocus(n)}
@@ -124,12 +125,12 @@ export function GraphView({ graph, onActivate }: { graph: Graph; onActivate?: (n
           {focus ? (
             <div className="stack-sm">
               <span className="badge badge-neutral" style={{ alignSelf: 'flex-start' }}>
-                {focus.type.replace(/_/g, ' ')}
-                {focus.role ? ` - ${focus.role}` : ''}
+                {entityTypeLabel(focus.type)}
+                {focus.role ? ` - ${roleLabel(focus.role)}` : ''}
               </span>
               <strong>{focus.label}</strong>
               <h3 className="small" style={{ marginTop: 8 }}>
-                Relationships
+                Connections
               </h3>
               <ul className="small" style={{ paddingLeft: 18, margin: 0 }}>
                 {edges
@@ -139,16 +140,16 @@ export function GraphView({ graph, onActivate }: { graph: Graph; onActivate?: (n
                     const other = graph.nodes.find((x) => x.id === (e.source === focus.id ? e.target : e.source));
                     return (
                       <li key={e.id}>
-                        {e.source === focus.id ? `${e.predicate} -> ` : `<- ${e.predicate} `}
-                        {other?.label ?? '?'} <span className="muted">({e.status})</span>
+                        {e.source === focus.id ? `${predicateLabel(e.predicate)} ` : `${other?.label ?? '?'} ${predicateLabel(e.predicate)} `}
+                        {e.source === focus.id ? (other?.label ?? '?') : 'this'} <span className="muted">({humanizeEnum(e.status).toLowerCase()})</span>
                       </li>
                     );
                   })}
               </ul>
-              {focus.type === 'asset' ? <p className="tiny muted">Press Enter or click to open the asset.</p> : null}
+              {focus.type === 'asset' ? <p className="tiny muted">Press Enter or click to open this drug&rsquo;s profile.</p> : null}
             </div>
           ) : (
-            <p className="small muted">Hover or focus a node (Tab) to see its relationships. Red edges are competes-with mappings; dashed edges are inferred or unverified.</p>
+            <p className="small muted">Point at a circle (or press Tab) to see its connections. Red lines mean &ldquo;competes with&rdquo;; dashed lines are estimated or not yet confirmed.</p>
           )}
         </aside>
       </div>

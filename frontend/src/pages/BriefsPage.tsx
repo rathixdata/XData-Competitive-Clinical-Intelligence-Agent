@@ -12,14 +12,15 @@ import { StatementCard } from '../components/Statement';
 import { EmptyState, ErrorState, InlineError, Loading, QueryView } from '../components/States';
 import { useLandscape } from '../state/landscapeContext';
 import { catalystDate } from '../lib/catalyst';
-import { fmtDate, fmtDateTime, humanize, isoDay, shortId } from '../lib/format';
+import { fmtDate, fmtDateTime, isoDay, shortId } from '../lib/format';
+import { eventTypeLabel } from '../lib/labels';
 import { useToast } from '../lib/toastContext';
 
 const STEPS: { id: ReportStatus; label: string }[] = [
   { id: 'draft', label: 'Draft' },
   { id: 'in_review', label: 'In review' },
   { id: 'approved', label: 'Approved' },
-  { id: 'distributed', label: 'Distributed' },
+  { id: 'distributed', label: 'Sent' },
 ];
 
 function Stepper({ status }: { status: ReportStatus }) {
@@ -60,16 +61,16 @@ function GenerateBrief({ onDone }: { onDone: (id: string) => void }) {
       }}
     >
       <div className="field">
-        <label htmlFor="b-start">Period start</label>
+        <label htmlFor="b-start">Covering changes from</label>
         <input id="b-start" type="date" value={start} onChange={(e) => setStart(e.target.value)} required />
       </div>
       <div className="field">
-        <label htmlFor="b-end">Period end</label>
+        <label htmlFor="b-end">To</label>
         <input id="b-end" type="date" value={end} onChange={(e) => setEnd(e.target.value)} required />
       </div>
       <div className="field">
         <button type="submit" className="btn btn-primary" disabled={!landscapeId || m.isPending} aria-busy={m.isPending}>
-          <FilePlus2 size={15} aria-hidden /> {m.isPending ? 'Generating...' : 'Generate brief'}
+          <FilePlus2 size={15} aria-hidden /> {m.isPending ? 'Writing the brief...' : 'Create brief'}
         </button>
       </div>
       <div style={{ gridColumn: '1 / -1' }}>
@@ -89,16 +90,28 @@ export function BriefsListPage() {
       <div className="page-header">
         <div>
           <h1>Executive briefs</h1>
-          <p>Periodic summaries for {landscape?.name ?? 'the selected landscape'}: draft, review, approve, then distribute.</p>
+          <p>
+            One-page summaries of the most important competitor changes{landscape ? ` in ${landscape.name}` : ''}, written for leadership. The AI drafts a brief, an analyst
+            reviews and approves it, then you download it or send it to recipients.
+          </p>
         </div>
       </div>
       {can(PERMS.reportWrite) ? (
         <section className="card" aria-labelledby="gen-h" style={{ marginBottom: 16 }}>
-          <h2 id="gen-h">New brief</h2>
+          <h2 id="gen-h">Create a brief</h2>
+          <p className="small muted section-intro">Pick the period to cover. The brief is drafted from the changes detected in that period; you can edit it before approving.</p>
           <GenerateBrief onDone={(id) => navigate(`/briefs/${id}`)} />
         </section>
       ) : null}
-      <QueryView query={q} isEmpty={(d) => d.length === 0} empty={<div className="card"><EmptyState title="No briefs yet" /></div>}>
+      <QueryView query={q} isEmpty={(d) => d.length === 0} empty={
+          <div className="card">
+            <EmptyState title="No executive briefs yet">
+              {can(PERMS.reportWrite)
+                ? 'Click "Create brief" above to generate one from the latest changes.'
+                : 'Briefs created by your analysts will appear here once they are drafted.'}
+            </EmptyState>
+          </div>
+        }>
         {(reports) => (
           <div className="table-wrap">
             <table className="table">
@@ -106,10 +119,10 @@ export function BriefsListPage() {
               <thead>
                 <tr>
                   <th scope="col">Brief</th>
-                  <th scope="col">Period</th>
+                  <th scope="col">Period covered</th>
                   <th scope="col">Status</th>
                   <th scope="col">Created</th>
-                  <th scope="col">Approved</th>
+                  <th scope="col">Approved on</th>
                 </tr>
               </thead>
               <tbody>
@@ -125,7 +138,7 @@ export function BriefsListPage() {
                       <StatusBadge status={r.status} />
                     </td>
                     <td>{fmtDateTime(r.created_at)}</td>
-                    <td>{r.approved_at ? fmtDateTime(r.approved_at) : '-'}</td>
+                    <td>{r.approved_at ? fmtDateTime(r.approved_at) : <span className="muted">Not yet</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -154,7 +167,7 @@ function EditBrief({ report, onClose }: { report: ReportDetail; onClose: () => v
         reason,
       }),
     onSuccess: () => {
-      notify('Brief updated and moved to review');
+      notify('Brief saved and sent for approval');
       void qc.invalidateQueries({ queryKey: ['report', report.id] });
       void qc.invalidateQueries({ queryKey: ['reports'] });
       onClose();
@@ -200,20 +213,20 @@ function EditBrief({ report, onClose }: { report: ReportDetail; onClose: () => v
                   <input id={`eb-h-${i}`} type="text" value={d.headline} onChange={(e) => setDevs(devs.map((x, j) => (j === i ? { ...x, headline: e.target.value } : x)))} />
                 </div>
                 <div className="field">
-                  <label htmlFor={`eb-s-${i}`}>So what (AI interpretation) {i + 1}</label>
+                  <label htmlFor={`eb-s-${i}`}>Why it matters (interpretation) {i + 1}</label>
                   <textarea id={`eb-s-${i}`} value={d.so_what} onChange={(e) => setDevs(devs.map((x, j) => (j === i ? { ...x, so_what: e.target.value } : x)))} />
                 </div>
               </div>
             ))}
-            {devs.length === 0 ? <span className="small muted">No top developments.</span> : null}
+            {devs.length === 0 ? <span className="small muted">No top developments in this brief.</span> : null}
           </div>
         </fieldset>
         <div className="field">
-          <label htmlFor="eb-watch">Watch items (one per line)</label>
+          <label htmlFor="eb-watch">Things to keep an eye on (one per line)</label>
           <textarea id="eb-watch" rows={4} value={watch} onChange={(e) => setWatch(e.target.value)} />
         </div>
         <div className="field">
-          <label htmlFor="eb-reason">Reason for edit (required, audited)</label>
+          <label htmlFor="eb-reason">Why you are editing (required, kept in the activity log)</label>
           <input id="eb-reason" type="text" required minLength={3} value={reason} onChange={(e) => setReason(e.target.value)} />
         </div>
       </form>
@@ -227,12 +240,12 @@ function BriefBody({ content }: { content: BriefContent }) {
     <div className="stack" style={{ gap: 16 }}>
       <section className="card" aria-labelledby="sum-h">
         <h2 id="sum-h">Executive summary</h2>
-        <p style={{ whiteSpace: 'pre-wrap' }}>{content.executive_summary || 'No summary.'}</p>
+        <p style={{ whiteSpace: 'pre-wrap' }}>{content.executive_summary || 'No summary written yet.'}</p>
         {content.edited_by ? <span className="badge badge-human">Human-edited {content.edited_at ? fmtDateTime(content.edited_at) : ''}</span> : null}
       </section>
       <section className="card" aria-labelledby="top-h">
         <h2 id="top-h">Top developments</h2>
-        {(content.top_developments ?? []).length === 0 ? <p className="muted">No material developments this period.</p> : null}
+        {(content.top_developments ?? []).length === 0 ? <p className="muted">No important changes in this period.</p> : null}
         <ol className="stack" style={{ paddingLeft: 18 }}>
           {(content.top_developments ?? []).map((d) => {
             const digest = s.top?.find((t) => t.event_id === d.event_id);
@@ -258,8 +271,8 @@ function BriefBody({ content }: { content: BriefContent }) {
       </section>
       <div className="grid grid-2">
         <section className="card" aria-labelledby="bcat-h">
-          <h2 id="bcat-h">Upcoming catalysts</h2>
-          {(s.catalysts ?? []).length === 0 ? <p className="muted small">None in the next 90 days.</p> : null}
+          <h2 id="bcat-h">Upcoming milestones</h2>
+          {(s.catalysts ?? []).length === 0 ? <p className="muted small">None expected in the next 90 days.</p> : null}
           <ul className="list-plain">
             {(s.catalysts ?? []).map((c) => (
               <li key={c.catalyst_id} className="stack-sm">
@@ -276,8 +289,8 @@ function BriefBody({ content }: { content: BriefContent }) {
           </ul>
         </section>
         <section className="card" aria-labelledby="watch-h">
-          <h2 id="watch-h">Watch items</h2>
-          {(content.watch_items ?? []).length === 0 ? <p className="muted small">None.</p> : null}
+          <h2 id="watch-h">Things to keep an eye on</h2>
+          {(content.watch_items ?? []).length === 0 ? <p className="muted small">Nothing flagged.</p> : null}
           <ul className="small" style={{ paddingLeft: 18 }}>
             {(content.watch_items ?? []).map((w) => (
               <li key={w}>{w}</li>
@@ -285,8 +298,8 @@ function BriefBody({ content }: { content: BriefContent }) {
           </ul>
         </section>
         <section className="card" aria-labelledby="ne-h">
-          <h2 id="ne-h">New entrants</h2>
-          {(s.new_entrants ?? []).length === 0 ? <p className="muted small">No new entrants detected.</p> : null}
+          <h2 id="ne-h">New competitors</h2>
+          {(s.new_entrants ?? []).length === 0 ? <p className="muted small">No new competitors detected this period.</p> : null}
           <ul className="small" style={{ paddingLeft: 18 }}>
             {(s.new_entrants ?? []).map((e) => (
               <li key={e.event_id}>
@@ -296,32 +309,32 @@ function BriefBody({ content }: { content: BriefContent }) {
           </ul>
         </section>
         <section className="card" aria-labelledby="rs-h">
-          <h2 id="rs-h">Regulatory and scientific</h2>
-          {(s.regulatory_scientific ?? []).length === 0 ? <p className="muted small">None this period.</p> : null}
+          <h2 id="rs-h">Regulatory and scientific news</h2>
+          {(s.regulatory_scientific ?? []).length === 0 ? <p className="muted small">Nothing this period.</p> : null}
           <ul className="small" style={{ paddingLeft: 18 }}>
             {(s.regulatory_scientific ?? []).map((e) => (
               <li key={e.event_id}>
-                <span className="badge badge-neutral">{humanize(e.type)}</span> <Link to={`/events/${e.event_id}`}>{e.title}</Link>
+                <span className="badge badge-neutral">{eventTypeLabel(e.type)}</span> <Link to={`/events/${e.event_id}`}>{e.title}</Link>
               </li>
             ))}
           </ul>
         </section>
       </div>
       <section className="card" aria-labelledby="low-h">
-        <h2 id="low-h">Low-materiality summary (transparency)</h2>
+        <h2 id="low-h">Lower-priority changes not shown above</h2>
         <p className="small">
-          {s.low_materiality_summary?.count ?? 0} lower-materiality event(s)
+          {s.low_materiality_summary?.count ?? 0} lower-priority change(s)
           {s.low_materiality_summary?.by_type && Object.keys(s.low_materiality_summary.by_type).length
             ? `: ${Object.entries(s.low_materiality_summary.by_type)
-                .map(([k, v]) => `${humanize(k)} (${v})`)
+                .map(([k, v]) => `${eventTypeLabel(k)} (${v})`)
                 .join(', ')}`
             : ''}
-          . {s.low_materiality_summary?.note ?? ''} Total events this period: {s.event_count ?? 0}.
+          . {s.low_materiality_summary?.note ?? ''} Total changes this period: {s.event_count ?? 0}.
         </p>
       </section>
       <p className="small muted">{content.disclaimer}</p>
       <p className="tiny muted">
-        Generated {fmtDateTime(content.generated_at)} - {content.model_workflow_version}
+        Drafted by AI {fmtDateTime(content.generated_at)} - {content.model_workflow_version}
       </p>
     </div>
   );
@@ -373,42 +386,54 @@ export function BriefDetailPage() {
         <div>
           <h1>{r.content.title ?? r.title}</h1>
           <p>
-            {fmtDate(r.period_start)} - {fmtDate(r.period_end)}
+            Covers {fmtDate(r.period_start)} - {fmtDate(r.period_end)}
             {r.approved_by ? ` - approved by ${shortId(r.approved_by)} ${fmtDateTime(r.approved_at)}` : ''}
-            {r.distributed_at ? ` - distributed ${fmtDateTime(r.distributed_at)} to ${r.distribution_list.join(', ')}` : ''}
+            {r.distributed_at ? ` - sent ${fmtDateTime(r.distributed_at)} to ${r.distribution_list.join(', ')}` : ''}
           </p>
         </div>
-        <ExportButtons label="Export brief" formats={['docx', 'pdf', 'pptx', 'md']} onExport={(f) => api.exportReport(id, f)} />
+        <ExportButtons label="Download brief" formats={['docx', 'pdf', 'pptx', 'md']} onExport={(f) => api.exportReport(id, f)} />
       </div>
       <div className="card row-between" style={{ marginBottom: 16 }}>
         <Stepper status={r.status} />
         <div className="btn-group">
           {can(PERMS.reportWrite) ? (
-            <button type="button" className="btn" disabled={locked} onClick={() => setEditing(true)} title={locked ? 'Approved briefs are immutable' : undefined}>
-              <PencilLine size={15} aria-hidden /> Edit
+            <button
+              type="button"
+              className="btn"
+              disabled={locked}
+              onClick={() => setEditing(true)}
+              title={locked ? 'Approved briefs are locked and cannot be edited' : 'Correct or reword the brief before approval'}
+            >
+              <PencilLine size={15} aria-hidden /> Edit brief
             </button>
           ) : null}
           {can(PERMS.reportApprove) ? (
             <>
-              <button type="button" className="btn" disabled={locked || approve.isPending} onClick={() => approve.mutate()}>
-                <Check size={15} aria-hidden /> Approve
+              <button
+                type="button"
+                className="btn"
+                disabled={locked || approve.isPending}
+                onClick={() => approve.mutate()}
+                title="Confirm the brief is accurate; it is then locked and can be sent"
+              >
+                <Check size={15} aria-hidden /> Approve brief
               </button>
-              <button type="button" className="btn btn-primary" disabled={r.status !== 'approved'} onClick={() => setDistOpen(true)} title={r.status !== 'approved' ? 'Approve before distributing' : undefined}>
-                <Send size={15} aria-hidden /> Distribute
+              <button type="button" className="btn btn-primary" disabled={r.status !== 'approved'} onClick={() => setDistOpen(true)} title={r.status !== 'approved' ? 'Approve the brief before sending it' : 'Email the brief to recipients'}>
+                <Send size={15} aria-hidden /> Send to recipients
               </button>
             </>
           ) : null}
           {r.original_content ? (
             <label className="checkbox">
               <input type="checkbox" checked={showOriginal} onChange={(e) => setShowOriginal(e.target.checked)} />
-              Show machine original
+              Show original AI draft
             </label>
           ) : null}
         </div>
       </div>
       {showOriginal && r.original_content ? (
         <div className="banner banner-info" role="note">
-          <p>Showing the original machine-generated brief (before analyst edits).</p>
+          <p>Showing the original AI-written draft, before any analyst edits.</p>
         </div>
       ) : null}
       <BriefBody content={showOriginal && r.original_content ? r.original_content : r.content} />
@@ -416,7 +441,7 @@ export function BriefDetailPage() {
       <Modal
         open={distOpen}
         onClose={() => setDistOpen(false)}
-        title="Distribute brief"
+        title="Send brief to recipients"
         footer={
           <>
             <button type="button" className="btn" onClick={() => setDistOpen(false)}>
@@ -431,7 +456,7 @@ export function BriefDetailPage() {
         <div className="stack">
           <InlineError error={distribute.error} />
           <div className="field">
-            <label htmlFor="dist">Recipients (email addresses, comma separated)</label>
+            <label htmlFor="dist">Email addresses (separate with commas)</label>
             <textarea id="dist" value={recipients} onChange={(e) => setRecipients(e.target.value)} data-autofocus />
           </div>
         </div>

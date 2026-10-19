@@ -10,12 +10,12 @@ import { useToast } from '../../lib/toastContext';
 const FEEDBACK_TEXT: Record<FeedbackLabel, string> = {
   USEFUL: 'Useful',
   NOT_USEFUL: 'Not useful',
-  MATERIAL: 'Material',
-  NOT_MATERIAL: 'Not material',
-  WRONG_MAPPING: 'Wrong asset mapping',
-  INCORRECT_INTERPRETATION: 'Incorrect interpretation',
+  MATERIAL: 'Important (material)',
+  NOT_MATERIAL: 'Not important',
+  WRONG_MAPPING: 'Linked to the wrong drug',
+  INCORRECT_INTERPRETATION: 'AI interpretation is wrong',
   ALREADY_KNOWN: 'Already known',
-  ESCALATE: 'Escalate',
+  ESCALATE: 'Escalate to lead',
 };
 
 export function FeedbackPanel({ detail }: { detail: EventDetail }) {
@@ -48,7 +48,7 @@ export function FeedbackPanel({ detail }: { detail: EventDetail }) {
         </p>
       ) : (
         <p className="small muted" style={{ margin: 0 }}>
-          No feedback yet.
+          No feedback yet. Your rating helps tune which changes are flagged as important.
         </p>
       )}
       {can(PERMS.feedbackWrite) ? (
@@ -60,7 +60,7 @@ export function FeedbackPanel({ detail }: { detail: EventDetail }) {
           }}
         >
           <fieldset>
-            <legend>How would you rate this intelligence?</legend>
+            <legend>How would you rate this alert?</legend>
             <div className="row" style={{ gap: 6 }}>
               {FEEDBACK_LABELS.map((l) => (
                 <button key={l} type="button" className={`btn btn-sm ${label === l ? 'btn-primary' : ''}`} aria-pressed={label === l} onClick={() => setLabel(label === l ? null : l)}>
@@ -79,7 +79,7 @@ export function FeedbackPanel({ detail }: { detail: EventDetail }) {
                 <label htmlFor="fb-comment">Comment (optional)</label>
                 <textarea id="fb-comment" maxLength={4000} value={comment} onChange={(e) => setComment(e.target.value)} />
               </div>
-              {label === 'ESCALATE' ? <p className="small muted">Escalate feedback also marks the event as escalated.</p> : null}
+              {label === 'ESCALATE' ? <p className="small muted">This also marks the change as escalated and notifies your lead.</p> : null}
             </>
           ) : null}
           <InlineError error={m.error} />

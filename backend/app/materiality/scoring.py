@@ -59,7 +59,7 @@ def change_magnitude(c: ChangeInput) -> tuple[float, list[str]]:
     if t == ChangeType.ENROLLMENT_CHANGED and m.get("pct_change") is not None:
         pct = abs(float(m["pct_change"]))
         base = min(95.0, 35 + pct * 1.1)
-        hits.append(f"enrollment {m['pct_change']:+.0f}%")
+        hits.append(f"enrollment target {'raised' if m['pct_change'] >= 0 else 'cut'} by {abs(m['pct_change']):.0f}%")
     elif t == ChangeType.DATE_CHANGED:
         shift = m.get("shift_months")
         if "DATE_ACTUALIZED" in tags:
@@ -68,7 +68,8 @@ def change_magnitude(c: ChangeInput) -> tuple[float, list[str]]:
         elif shift is not None:
             weight = 1.0 if m.get("date_field") == "primary_completion_date" else 0.7
             base = min(95.0, 30 + abs(float(shift)) * 6 * weight)
-            hits.append(f"{m.get('date_field', 'date')} moved {shift:+.1f} months")
+            hits.append(f"{str(m.get('date_field') or 'date').replace('_', ' ')} moved {abs(shift):.1f} months "
+                        f"{'later' if shift > 0 else 'earlier'}")
     elif t == ChangeType.ENDPOINT_CHANGED:
         if m.get("endpoint_level") == "secondary":
             base = 45.0
@@ -107,11 +108,11 @@ def change_magnitude(c: ChangeInput) -> tuple[float, list[str]]:
             hits.append("indications & usage changed")
         else:
             base = min(75.0, 35 + (1 - sim) * 200)
-            hits.append(f"label section changed (similarity {sim:.2f})")
+            hits.append(f"label section changed ({1 - sim:.0%} of the text differs)")
     elif t == ChangeType.ELIGIBILITY_CHANGED:
         sim = float(m.get("similarity", 0.9))
         base = min(80.0, 30 + (1 - sim) * 150)
-        hits.append(f"eligibility text changed (similarity {sim:.2f})")
+        hits.append(f"eligibility text changed ({1 - sim:.0%} of the text differs)")
     elif t == ChangeType.APPROVAL:
         hits.append("original application approved")
     elif t == ChangeType.NEW_PUBLICATION:
@@ -135,11 +136,12 @@ def _temporal(ctx: ScoringContext) -> tuple[float, list[str]]:
         return 30.0, ["no dated catalyst"]
     months = (ctx.catalyst_date - ctx.now).days / 30.4375
     if months < 0:
-        return 55.0, [f"{ctx.catalyst_kind or 'catalyst'} date passed {abs(months):.0f} months ago; readout may be pending"]
+        return 55.0, [f"{(ctx.catalyst_kind or 'milestone').replace('_', ' ')} date passed {abs(months):.0f} months ago; "
+                      "results may be due"]
     for limit, score in ((1, 100.0), (3, 90.0), (6, 80.0), (12, 65.0), (18, 55.0), (24, 45.0)):
         if months <= limit:
-            return score, [f"{ctx.catalyst_kind or 'catalyst'} in {months:.0f} months"]
-    return 25.0, [f"{ctx.catalyst_kind or 'catalyst'} more than 24 months away"]
+            return score, [f"{(ctx.catalyst_kind or 'milestone').replace('_', ' ')} in {months:.0f} months"]
+    return 25.0, [f"{(ctx.catalyst_kind or 'milestone').replace('_', ' ')} more than 24 months away"]
 
 
 def score_event(ctx: ScoringContext, weights: dict[str, float] | None = None,
@@ -150,10 +152,13 @@ def score_event(ctx: ScoringContext, weights: dict[str, float] | None = None,
 
     # R - relevance to the customer's portfolio / landscape
     r = {"monitored": 100.0, "linked": 85.0, "indication": 60.0, "peripheral": 30.0}.get(ctx.relevance_level, 30.0)
-    rule_hits["R"] = [f"object is {ctx.relevance_level} in landscape"]
+    rule_hits["R"] = [{"monitored": "a record you monitor directly", "linked": "a record linked to your landscape",
+                       "indication": "same disease area as your landscape",
+                       "peripheral": "only loosely related to your landscape"}.get(ctx.relevance_level,
+                                                                                  f"{ctx.relevance_level} in landscape")]
     if ctx.max_proximity > 0:
         r = max(r, 60 + 40 * ctx.max_proximity)
-        rule_hits["R"].append(f"maps to internal asset (proximity {ctx.max_proximity:.2f})")
+        rule_hits["R"].append(f"affects one of your drugs ({ctx.max_proximity:.0%} similar)")
 
     # C - change magnitude (max change + bonus for concurrent material changes)
     mags = [change_magnitude(c) for c in ctx.changes] or [(0.0, ["no changes"])]
@@ -163,24 +168,24 @@ def score_event(ctx: ScoringContext, weights: dict[str, float] | None = None,
     concurrent = sum(1 for m, _ in mags[1:] if m >= 50)
     if concurrent:
         c = min(100.0, c + 5 * min(concurrent, 2))
-        rule_hits["C"].append(f"{concurrent} additional concurrent material change(s)")
+        rule_hits["C"].append(f"{concurrent} other important change(s) in the same update")
     if ctx.phase and "3" in ctx.phase:
         c = min(100.0, c + 5)
-        rule_hits["C"].append(f"pivotal-stage program ({ctx.phase})")
+        rule_hits["C"].append(f"late-stage (pivotal) program, {ctx.phase}")
 
     # P - competitive proximity
     p = round(100 * ctx.max_proximity, 1)
-    rule_hits["P"] = [f"max proximity to customer assets {ctx.max_proximity:.2f}"]
+    rule_hits["P"] = [f"the closest of your drugs is {ctx.max_proximity:.0%} similar"]
 
     # T - temporal importance
     t, rule_hits["T"] = _temporal(ctx)
 
     # N - novelty
     n = 100.0
-    rule_hits["N"] = ["first observation"]
+    rule_hits["N"] = ["first time a change like this was seen"]
     if ctx.prior_similar_events:
         n = max(30.0, 100 - 30 * ctx.prior_similar_events)
-        rule_hits["N"] = [f"{ctx.prior_similar_events} similar event(s) in last 90 days"]
+        rule_hits["N"] = [f"{ctx.prior_similar_events} similar change(s) in the last 90 days"]
     if ctx.already_known_feedback:
         n = min(n, 40.0)
         rule_hits["N"].append("analysts marked similar events as already known")

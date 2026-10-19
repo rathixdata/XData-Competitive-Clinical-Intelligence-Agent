@@ -10,10 +10,11 @@ import { EntityPicker } from '../components/EntityPicker';
 import { EmptyState, ErrorState, InlineError, Loading, QueryView } from '../components/States';
 import { useLandscape } from '../state/landscapeContext';
 import { fmtDateTime } from '../lib/format';
+import { entityTypeLabel } from '../lib/labels';
 import { errorMessage, useToast } from '../lib/toastContext';
 
 const ITEM_TYPES = ['company', 'asset', 'mechanism', 'indication', 'trial', 'kol', 'conference', 'regulatory_event'];
-const VIS_TEXT: Record<Visibility, string> = { private: 'Private (only me)', team: 'My team', tenant: 'Everyone in the tenant' };
+const VIS_TEXT: Record<Visibility, string> = { private: 'Only me', team: 'My team', tenant: 'Everyone in my organisation' };
 
 function CreateWatchlist({ onClose }: { onClose: () => void }) {
   const { landscapeId } = useLandscape();
@@ -56,6 +57,7 @@ function CreateWatchlist({ onClose }: { onClose: () => void }) {
         <InlineError error={m.error} />
         <div className="field">
           <label htmlFor="wl-name">Name</label>
+          <span className="hint">For example &ldquo;Target-X competitors&rdquo; or &ldquo;Key Phase 3 trials&rdquo;</span>
           <input id="wl-name" type="text" required value={name} onChange={(e) => setName(e.target.value)} data-autofocus />
         </div>
         <div className="field">
@@ -63,7 +65,7 @@ function CreateWatchlist({ onClose }: { onClose: () => void }) {
           <textarea id="wl-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
         </div>
         <div className="field">
-          <label htmlFor="wl-vis">Sharing</label>
+          <label htmlFor="wl-vis">Who can see it</label>
           <select id="wl-vis" value={visibility} onChange={(e) => setVisibility(e.target.value as Visibility)}>
             {Object.entries(VIS_TEXT).map(([k, v]) => (
               <option key={k} value={k}>
@@ -86,7 +88,10 @@ export function WatchlistsPage() {
       <div className="page-header">
         <div>
           <h1>Watchlists</h1>
-          <p>Track companies, assets, mechanisms and trials. Watched items boost personalised feed ranking and can drive alert policies.</p>
+          <p>
+            Lists of what you track closely: companies, drugs, mechanisms, diseases or trials. Changes about watched items rank higher in your feed (with &ldquo;Boost my
+            watchlists&rdquo;) and can trigger alert rules.
+          </p>
         </div>
         {can(PERMS.watchlistWrite) ? (
           <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
@@ -94,7 +99,13 @@ export function WatchlistsPage() {
           </button>
         ) : null}
       </div>
-      <QueryView query={q} isEmpty={(d) => d.length === 0} empty={<div className="card"><EmptyState title="No watchlists yet" /></div>}>
+      <QueryView query={q} isEmpty={(d) => d.length === 0} empty={
+          <div className="card">
+            <EmptyState title="No watchlists yet">
+              {can(PERMS.watchlistWrite) ? 'Click "New watchlist" and add the companies or drugs you care most about.' : 'Watchlists shared with you will appear here.'}
+            </EmptyState>
+          </div>
+        }>
         {(items) => (
           <div className="grid grid-auto">
             {items.map((w) => (
@@ -104,9 +115,13 @@ export function WatchlistsPage() {
                 </h2>
                 {w.description ? <p className="small muted">{w.description}</p> : null}
                 <div className="row">
-                  <span className="badge badge-neutral">{VIS_TEXT[w.visibility] ?? w.visibility}</span>
-                  <span className="badge badge-info">{w.item_count ?? 0} items</span>
-                  {w.owned ? <span className="badge badge-success">Owner</span> : <span className="badge badge-neutral">Shared with you</span>}
+                  <span className="badge badge-neutral" title="Who can see this watchlist">
+                    Visible to: {VIS_TEXT[w.visibility] ?? w.visibility}
+                  </span>
+                  <span className="badge badge-info">
+                    {w.item_count ?? 0} item{w.item_count === 1 ? '' : 's'} tracked
+                  </span>
+                  {w.owned ? <span className="badge badge-success">Created by you</span> : <span className="badge badge-neutral">Shared with you</span>}
                 </div>
               </article>
             ))}
@@ -130,22 +145,22 @@ function ImportCsv({ wl, onClose }: { wl: WatchlistDetail; onClose: () => void }
       open
       wide
       onClose={onClose}
-      title="Bulk import (CSV)"
+      title="Add many items at once (CSV file)"
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
           <button type="button" className="btn btn-primary" onClick={() => m.mutate()} disabled={m.isPending || csv.trim().split('\n').length < 2}>
-            <Upload size={14} aria-hidden /> Import
+            <Upload size={14} aria-hidden /> Add items
           </button>
         </>
       }
     >
       <div className="stack">
         <p className="small">
-          Columns: <code>item_type,value[,entity_id]</code>. Item types: {ITEM_TYPES.join(', ')}. Names are resolved to canonical entities; unresolved rows are
-          still added as free-text items and listed below.
+          Use a spreadsheet saved as CSV with the columns <code>item_type,value</code> (optionally <code>entity_id</code>). Allowed item types:{' '}
+          {ITEM_TYPES.join(', ')}. Names are matched to known companies and drugs; anything we cannot match is still added as text and listed below.
         </p>
         <div className="field">
           <label htmlFor="csv-file">Upload a CSV file</label>
@@ -168,7 +183,7 @@ function ImportCsv({ wl, onClose }: { wl: WatchlistDetail; onClose: () => void }
           <div className="banner banner-info" role="status">
             <div>
               <p>
-                Added {m.data.added} item(s). {m.data.unresolved.length} row(s) need attention.
+                Added {m.data.added} item(s). {m.data.unresolved.length} row(s) could not be matched and need a look.
               </p>
               {m.data.unresolved.length ? (
                 <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
@@ -243,13 +258,13 @@ export function WatchlistDetailPage() {
       <div className="page-header">
         <div>
           <h1>{wl.name}</h1>
-          <p>{wl.description ?? 'No description'}</p>
+          <p>{wl.description ?? 'The companies, drugs and trials on this list. Changes about them are boosted in your feed and can trigger alerts.'}</p>
         </div>
         {canEdit ? (
           <div className="btn-group">
             <div className="row">
               <label htmlFor="wl-share" className="small strong">
-                Sharing
+                Who can see it
               </label>
               <select id="wl-share" style={{ width: 200 }} value={wl.visibility} onChange={(e) => share.mutate(e.target.value as Visibility)}>
                 {Object.entries(VIS_TEXT).map(([k, v]) => (
@@ -260,7 +275,7 @@ export function WatchlistDetailPage() {
               </select>
             </div>
             <button type="button" className="btn" onClick={() => setImporting(true)}>
-              <Upload size={15} aria-hidden /> Import CSV
+              <Upload size={15} aria-hidden /> Add from CSV file
             </button>
             <button
               type="button"
@@ -269,23 +284,24 @@ export function WatchlistDetailPage() {
                 if (window.confirm(`Delete watchlist "${wl.name}"?`)) del.mutate();
               }}
             >
-              <Trash2 size={15} aria-hidden /> Delete
+              <Trash2 size={15} aria-hidden /> Delete watchlist
             </button>
           </div>
         ) : (
-          <span className="badge badge-neutral">{VIS_TEXT[wl.visibility]} - read only</span>
+          <span className="badge badge-neutral">Visible to: {VIS_TEXT[wl.visibility]} - view only</span>
         )}
       </div>
       {canEdit ? (
         <section className="card" aria-labelledby="add-h" style={{ marginBottom: 16 }}>
-          <h2 id="add-h">Add items</h2>
+          <h2 id="add-h">Add something to track</h2>
+          <p className="small muted section-intro">Search for a known company, drug or trial (best), or type any name as free text.</p>
           <div className="grid grid-2">
             <EntityPicker
-              label="Search entities (company, asset, trial, mechanism, indication...)"
+              label="Search companies, drugs, trials, diseases..."
               onSelect={(h) => {
                 const t = h.type === 'target' ? 'mechanism' : h.type;
                 if (!ITEM_TYPES.includes(t)) {
-                  notify(`Entities of type ${h.type} cannot be watched; add it as free text instead`, 'error');
+                  notify(`A ${entityTypeLabel(h.type).toLowerCase()} cannot be watched; add it as free text instead`, 'error');
                   return;
                 }
                 add.mutate({ item_type: t, entity_id: h.id, value: h.name });
@@ -302,17 +318,17 @@ export function WatchlistDetailPage() {
               }}
             >
               <div className="field">
-                <label htmlFor="free-type">Type</label>
+                <label htmlFor="free-type">What is it?</label>
                 <select id="free-type" value={freeType} onChange={(e) => setFreeType(e.target.value)}>
                   {ITEM_TYPES.map((t) => (
                     <option key={t} value={t}>
-                      {t.replace(/_/g, ' ')}
+                      {entityTypeLabel(t)}
                     </option>
                   ))}
                 </select>
               </div>
               <div className="field">
-                <label htmlFor="free-val">Free-text value</label>
+                <label htmlFor="free-val">Name (free text)</label>
                 <input id="free-val" type="text" value={freeValue} onChange={(e) => setFreeValue(e.target.value)} />
               </div>
               <div className="field">
@@ -325,17 +341,19 @@ export function WatchlistDetailPage() {
         </section>
       ) : null}
       <section className="card" aria-labelledby="items-h">
-        <h2 id="items-h">Items ({wl.items.length})</h2>
+        <h2 id="items-h">Tracked items ({wl.items.length})</h2>
         {wl.items.length === 0 ? (
-          <EmptyState title="No items yet" />
+          <EmptyState title="Nothing tracked yet">{canEdit ? 'Use "Add something to track" above, or add many at once from a CSV file.' : 'The owner has not added anything yet.'}</EmptyState>
         ) : (
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
                   <th scope="col">Type</th>
-                  <th scope="col">Value</th>
-                  <th scope="col">Resolution</th>
+                  <th scope="col">Name</th>
+                  <th scope="col" title="Whether we matched the name to a known company, drug or trial">
+                    Matched?
+                  </th>
                   <th scope="col">Added</th>
                   {canEdit ? <th scope="col">Actions</th> : null}
                 </tr>
@@ -343,9 +361,15 @@ export function WatchlistDetailPage() {
               <tbody>
                 {wl.items.map((it) => (
                   <tr key={it.id}>
-                    <td>{it.item_type.replace(/_/g, ' ')}</td>
+                    <td>{entityTypeLabel(it.item_type)}</td>
                     <td>{it.item_type === 'asset' && it.entity_id ? <Link to={`/assets/${it.entity_id}`}>{it.value || it.entity_id}</Link> : it.value || it.entity_id}</td>
-                    <td>{it.entity_id ? <span className="badge badge-success">Linked to entity</span> : <span className="badge badge-warning">Free text (unresolved)</span>}</td>
+                    <td>{it.entity_id ? (
+                        <span className="badge badge-success">Matched to a known record</span>
+                      ) : (
+                        <span className="badge badge-warning" title="Tracked by name only; changes are matched on the text">
+                          Text only (not matched)
+                        </span>
+                      )}</td>
                     <td className="small">{fmtDateTime(it.created_at)}</td>
                     {canEdit ? (
                       <td>

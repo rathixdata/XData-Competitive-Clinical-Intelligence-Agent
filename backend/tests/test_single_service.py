@@ -119,3 +119,27 @@ def test_inprocess_scheduler_runs_jobs_and_stops(monkeypatch: pytest.MonkeyPatch
         scheduler.stop()
         scheduler._thread.join(10)
     assert not scheduler._thread.is_alive()
+
+
+def test_check_now_runs_in_the_background_in_single_service_mode(bootstrap_env, monkeypatch: pytest.MonkeyPatch,
+                                                                  client: TestClient) -> None:
+    from app.bootstrap import bootstrap_workspace
+    from app.workers import tasks
+
+    with session_scope(bypass_rls=True) as db:
+        bootstrap_workspace(db)
+    monkeypatch.setenv("XDATA_INPROCESS_SCHEDULER", "true")
+    get_settings.cache_clear()
+    started, release = threading.Event(), threading.Event()
+
+    def slow_run(args, kwargs, task_id=None):  # stands in for a multi-minute connector run
+        started.set()
+        release.wait(10)
+
+    monkeypatch.setattr(tasks.run_connector_task, "apply", slow_run)
+    token = client.post("/api/v1/auth/login", json={"tenant": "acme", "email": "admin@acme.example",
+                                                    "password": "Sup3r-Secret-Pass"}).json()["access_token"]
+    r = client.post("/api/v1/admin/connectors/ctgov/run", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 202 and r.json()["queued"] is True  # returned while the run is still going
+    assert started.wait(5)
+    release.set()

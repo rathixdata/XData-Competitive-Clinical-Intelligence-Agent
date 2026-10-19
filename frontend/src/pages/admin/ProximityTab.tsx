@@ -13,20 +13,20 @@ import { errorMessage, useToast } from '../../lib/toastContext';
 const DIMS = ['target', 'modality', 'biomarker', 'geography', 'indication', 'line_of_therapy'];
 
 function PairsTable({ pairs }: { pairs: ProximityTestPair[] }) {
-  if (pairs.length === 0) return <p className="small muted">No asset pairs evaluated (the landscape may have no customer/competitor assets).</p>;
+  if (pairs.length === 0) return <p className="small muted">No drug pairs to test yet. Add your drug and at least one competitor to the market first.</p>;
   return (
     <div className="table-wrap">
       <table className="table">
-        <caption className="sr-only">Proximity test results</caption>
+        <caption className="sr-only">Similarity test results</caption>
         <thead>
           <tr>
-            <th scope="col">Customer asset</th>
+            <th scope="col">Your drug</th>
             <th scope="col">Competitor</th>
             <th scope="col" className="num">
               Score
             </th>
-            <th scope="col">Mapped?</th>
-            <th scope="col">Rationale</th>
+            <th scope="col">Linked?</th>
+            <th scope="col">Why</th>
           </tr>
         </thead>
         <tbody>
@@ -35,7 +35,7 @@ function PairsTable({ pairs }: { pairs: ProximityTestPair[] }) {
               <td>{p.customer}</td>
               <td>{p.competitor}</td>
               <td className="num">{p.score.toFixed(2)}</td>
-              <td>{p.mapped ? <span className="badge badge-success">Mapped</span> : <span className="badge badge-neutral">Below threshold</span>}</td>
+              <td>{p.mapped ? <span className="badge badge-success">Linked to your drug</span> : <span className="badge badge-neutral">Not similar enough</span>}</td>
               <td className="small">{p.rationale ?? '-'}</td>
             </tr>
           ))}
@@ -62,7 +62,7 @@ function CreateRule({ onClose }: { onClose: () => void }) {
         weights: Object.fromEntries(Object.entries(weights).map(([k, v]) => [k, Number(v || 0)])),
       }),
     onSuccess: () => {
-      notify('Draft rule created; test it before activation');
+      notify('Draft rule created; test it before switching it on');
       void qc.invalidateQueries({ queryKey: ['proximity-rules'] });
       onClose();
     },
@@ -71,7 +71,7 @@ function CreateRule({ onClose }: { onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title="New proximity rule (draft)"
+      title="New drug similarity rule (draft)"
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>
@@ -98,9 +98,9 @@ function CreateRule({ onClose }: { onClose: () => void }) {
             <input id="pr-name" type="text" required value={name} onChange={(e) => setName(e.target.value)} data-autofocus />
           </div>
           <div className="field">
-            <label htmlFor="pr-ls">Landscape</label>
+            <label htmlFor="pr-ls">Market (landscape)</label>
             <select id="pr-ls" value={ls} onChange={(e) => setLs(e.target.value)}>
-              <option value="">Tenant-wide</option>
+              <option value="">All markets</option>
               {landscapes.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
@@ -109,12 +109,12 @@ function CreateRule({ onClose }: { onClose: () => void }) {
             </select>
           </div>
           <div className="field">
-            <label htmlFor="pr-min">Minimum proximity to map (0-1)</label>
+            <label htmlFor="pr-min">Minimum similarity to link a competitor to your drug (0-1)</label>
             <input id="pr-min" type="number" min={0} max={1} step={0.05} value={minP} onChange={(e) => setMinP(e.target.value)} />
           </div>
         </div>
         <fieldset>
-          <legend>Dimension weights</legend>
+          <legend>How much each similarity counts</legend>
           <div className="form-grid">
             {DIMS.map((d) => (
               <div className="field" key={d}>
@@ -147,7 +147,7 @@ export function ProximityTab() {
   const activate = useMutation({
     mutationFn: (id: string) => api.activateProximityRule(id),
     onSuccess: () => {
-      notify('Rule activated; previous active rule retired');
+      notify('Rule switched on; the previous rule was retired');
       void qc.invalidateQueries({ queryKey: ['proximity-rules'] });
     },
     onError: (e) => notify(errorMessage(e), 'error'),
@@ -159,15 +159,15 @@ export function ProximityTab() {
           <Plus size={15} aria-hidden /> New rule
         </button>
       </div>
-      <QueryView query={q} isEmpty={(d) => d.length === 0} empty={<EmptyState title="No proximity rules" />}>
+      <QueryView query={q} isEmpty={(d) => d.length === 0} empty={<EmptyState title="No similarity rules yet">A rule defines what makes a competitor &ldquo;close&rdquo; to your drug. Create a draft, test it, then switch it on.</EmptyState>}>
         {(rules) => (
           <div className="table-wrap">
             <table className="table">
-              <caption className="sr-only">Proximity rules</caption>
+              <caption className="sr-only">Drug similarity rules</caption>
               <thead>
                 <tr>
                   <th scope="col">Rule</th>
-                  <th scope="col">Landscape</th>
+                  <th scope="col">Market</th>
                   <th scope="col">Status</th>
                   <th scope="col">Weights</th>
                   <th scope="col" className="num">
@@ -183,7 +183,7 @@ export function ProximityTab() {
                     <td>
                       <strong>{r.name}</strong> <span className="tiny muted">v{r.version}</span>
                     </td>
-                    <td>{landscapes.find((l) => l.id === r.landscape_id)?.name ?? (r.landscape_id ? r.landscape_id.slice(0, 8) : 'Tenant-wide')}</td>
+                    <td>{landscapes.find((l) => l.id === r.landscape_id)?.name ?? (r.landscape_id ? r.landscape_id.slice(0, 8) : 'All markets')}</td>
                     <td>
                       <StatusBadge status={r.status} />
                     </td>
