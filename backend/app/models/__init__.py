@@ -44,6 +44,7 @@ from app.models.sources import (  # noqa: F401
     ChangeEvent,
     ConnectorConfig,
     ConnectorRun,
+    RawObject,
     SourceDocument,
     SourceSnapshot,
 )

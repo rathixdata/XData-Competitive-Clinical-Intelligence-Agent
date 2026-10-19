@@ -105,9 +105,52 @@ class S3ObjectStore(ObjectStore):
         self.client.delete_object(Bucket=self.bucket, Key=key)
 
 
+class PostgresObjectStore(ObjectStore):
+    """Stores raw artifacts in the ``raw_objects`` table. For single-service hosts whose local disk is
+    ephemeral and where no S3 bucket is available; S3 remains the recommended production backend."""
+
+    def put(self, key: str, data: bytes, content_type: str) -> None:
+        from sqlalchemy import text
+
+        from app.db.session import get_engine
+
+        with get_engine().begin() as c:
+            c.execute(text("INSERT INTO raw_objects (key, content_type, data, created_at) VALUES (:k, :t, :d, now()) "
+                           "ON CONFLICT (key) DO NOTHING"), {"k": key, "t": content_type, "d": data})
+
+    def get(self, key: str) -> bytes:
+        from sqlalchemy import text
+
+        from app.db.session import get_engine
+
+        with get_engine().connect() as c:
+            row = c.execute(text("SELECT data FROM raw_objects WHERE key = :k"), {"k": key}).first()
+        if row is None:
+            raise FileNotFoundError(key)
+        return bytes(row[0])
+
+    def exists(self, key: str) -> bool:
+        from sqlalchemy import text
+
+        from app.db.session import get_engine
+
+        with get_engine().connect() as c:
+            return c.execute(text("SELECT 1 FROM raw_objects WHERE key = :k"), {"k": key}).first() is not None
+
+    def delete(self, key: str) -> None:
+        from sqlalchemy import text
+
+        from app.db.session import get_engine
+
+        with get_engine().begin() as c:
+            c.execute(text("DELETE FROM raw_objects WHERE key = :k"), {"k": key})
+
+
 @lru_cache
 def get_object_store() -> ObjectStore:
     s = get_settings()
     if s.object_store_backend == "s3":
         return S3ObjectStore(s.s3_bucket, s.s3_region, s.s3_endpoint_url, s.s3_kms_key_id)
+    if s.object_store_backend == "postgres":
+        return PostgresObjectStore()
     return LocalObjectStore(s.object_store_local_path)

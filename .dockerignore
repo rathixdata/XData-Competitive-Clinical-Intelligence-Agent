@@ -1,0 +1,14 @@
+**/node_modules
+**/.venv
+.data
+.git
+**/__pycache__
+**/*.pyc
+**/dist
+**/dist-demo
+**/test-results*
+**/playwright-report
+backend/build
+backend/*.egg-info
+frontend/e2e/screenshots
+.env

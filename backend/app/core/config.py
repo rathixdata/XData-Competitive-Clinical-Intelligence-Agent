@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     celery_eager: bool = False
 
     # object store (raw immutable retention, FR-SRC-008)
-    object_store_backend: Literal["local", "s3"] = "local"
+    object_store_backend: Literal["local", "s3", "postgres"] = "local"
     object_store_local_path: str = "./.data/objects"
     s3_bucket: str = "xdata-ci-raw"
     s3_region: str | None = None
@@ -105,9 +105,30 @@ class Settings(BaseSettings):
     smtp_from: str = "intelligence@xdata.example.com"
     webhook_signing_secret: SecretStr = SecretStr("dev-webhook-secret")
 
+    # ---- single-service deployment (e.g. the Render blueprint) ---------------
+    # Serve the built web app from the API process (SPA fallback for client-side routes).
+    static_dir: str | None = None
+    # Run the connector schedule, change processing and alert delivery in a background thread of the
+    # API process instead of separate Celery worker/beat processes. Pair with celery_eager=true.
+    inprocess_scheduler: bool = False
+    # First-run workspace created at startup when no tenant exists yet (see app/bootstrap.py).
+    bootstrap_tenant: str | None = None
+    bootstrap_tenant_name: str = "My Company"
+    bootstrap_admin_email: str | None = None
+    bootstrap_admin_password: SecretStr | None = None
+
     # ---- observability -------------------------------------------------------
     otel_exporter_otlp_endpoint: str | None = None
     metrics_enabled: bool = True
+
+    @field_validator("database_url")
+    @classmethod
+    def _psycopg_driver(cls, v: str) -> str:
+        # Hosted Postgres providers hand out postgres:// or postgresql:// URLs; SQLAlchemy needs the driver.
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                return "postgresql+psycopg://" + v[len(prefix):]
+        return v
 
     @model_validator(mode="after")
     def _production_guards(self) -> Settings:

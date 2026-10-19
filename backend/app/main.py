@@ -28,7 +28,7 @@ from app.api.v1 import (
     reports,
 )
 from app.core.config import get_settings
-from app.core.errors import DomainError
+from app.core.errors import DomainError, NotFound
 from app.core.logging import configure_logging, get_logger
 from app.core.metrics import HTTP_LATENCY, HTTP_REQUESTS
 from app.core.request_context import set_request_meta
@@ -62,9 +62,44 @@ def _setup_tracing(app: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     configure_logging()
-    log.info("startup", env=get_settings().env)
+    s = get_settings()
+    log.info("startup", env=s.env)
+    if s.inprocess_scheduler:
+        from app import scheduler
+
+        scheduler.start()
     yield
+    if s.inprocess_scheduler:
+        from app import scheduler
+
+        scheduler.stop()
     get_engine().dispose()
+
+
+def _mount_web_app(app: FastAPI, static_dir: str) -> None:
+    """Serve the built web app (single-service deployments). Unknown non-API paths get index.html so
+    client-side routes such as /events/<id> survive a page reload."""
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+
+    root = Path(static_dir).resolve()
+    index = root / "index.html"
+    if not index.is_file():
+        log.warning("static_dir_missing_index", path=str(root))
+        return
+    reserved = (get_settings().api_prefix.strip("/") + "/", "healthz", "readyz", "metrics")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def web_app(path: str) -> FileResponse:
+        if path.startswith(reserved):
+            raise NotFound("not found")
+        candidate = (root / path).resolve()
+        if path and candidate.is_file() and candidate.is_relative_to(root):
+            # Hashed build assets never change; index.html must always be revalidated.
+            cache = "public, max-age=31536000, immutable" if path.startswith("assets/") else "no-cache"
+            return FileResponse(candidate, headers={"Cache-Control": cache})
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
 
 def create_app() -> FastAPI:
@@ -140,19 +175,23 @@ def create_app() -> FastAPI:
             checks["database"] = "ok"
         except Exception as e:  # noqa: BLE001
             checks["database"] = f"error: {type(e).__name__}"
-        try:
-            import redis
+        if not s.celery_eager:  # with eager tasks Redis only backs rate limits, which fall back to memory
+            try:
+                import redis
 
-            redis.Redis.from_url(s.redis_url, socket_timeout=0.5).ping()
-            checks["redis"] = "ok"
-        except Exception as e:  # noqa: BLE001
-            checks["redis"] = f"error: {type(e).__name__}"
+                redis.Redis.from_url(s.redis_url, socket_timeout=0.5).ping()
+                checks["redis"] = "ok"
+            except Exception as e:  # noqa: BLE001
+                checks["redis"] = f"error: {type(e).__name__}"
         ok = all(v == "ok" for v in checks.values())
         return JSONResponse(status_code=200 if ok else 503, content={"status": "ok" if ok else "degraded", "checks": checks})
 
     @app.get("/metrics", include_in_schema=False)
     def metrics() -> PlainTextResponse:
         return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    if s.static_dir:
+        _mount_web_app(app, s.static_dir)
 
     _setup_tracing(app)
     return app

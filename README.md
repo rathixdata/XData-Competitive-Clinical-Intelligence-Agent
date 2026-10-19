@@ -58,7 +58,14 @@ validated against retained evidence before anyone sees it. See `docs/architectur
 | `deploy/` | docker compose, Kubernetes (kustomize), Terraform (AWS), observability |
 | `docs/` | Architecture, RAG design, SRS traceability, security, runbook, OpenAPI |
 
-## Try it without installing anything
+## Run the full system in the cloud (one click, nothing to install)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rathixdata/XData-Competitive-Clinical-Intelligence-Agent)
+
+The button deploys the complete system: live ClinicalTrials.gov, PubMed and openFDA monitoring, scoring,
+evidence-checked summaries, Ask, alerts and briefs. Step-by-step instructions are in `deploy/render/README.md`.
+
+## Try a read-only preview
 
 A hosted, read-only demo replays real output of the pipeline in your browser: https://claude.ai/artifact/HUMam4kWWW1rdtQHf558wJ
 (access is controlled by the owner's Share settings). Build your own copy with `npm run build:demo`; see `frontend/demo/README.md`.

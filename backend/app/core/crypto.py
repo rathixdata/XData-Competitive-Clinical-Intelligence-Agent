@@ -55,7 +55,12 @@ def generate_api_key() -> tuple[str, str, str]:
 def _fernet() -> Fernet:
     s = get_settings()
     if s.field_encryption_key is not None:
-        return Fernet(s.field_encryption_key.get_secret_value().encode())
+        raw = s.field_encryption_key.get_secret_value()
+        try:
+            return Fernet(raw.encode())
+        except ValueError:
+            # Not a Fernet key (e.g. a platform-generated random secret): derive one from it deterministically.
+            return Fernet(base64.urlsafe_b64encode(hashlib.sha256(("fernet:" + raw).encode()).digest()))
     # Development fallback: derive a key from the JWT secret. Production requires an explicit key.
     digest = hashlib.sha256(("fernet:" + s.jwt_secret.get_secret_value()).encode()).digest()
     return Fernet(base64.urlsafe_b64encode(digest))

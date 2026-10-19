@@ -17,10 +17,22 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, Timestamps, UUIDPk, utcnow
+
+
+class RawObject(Base):
+    """Raw artifact bytes for the ``postgres`` object-store backend (hosts without durable disk or S3).
+    Write-once: a trigger blocks updates, so stored bytes always match the recorded checksum."""
+
+    __tablename__ = "raw_objects"
+    __rls__ = "public"
+    key: Mapped[str] = mapped_column(String(300), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(80))
+    data: Mapped[bytes] = mapped_column(BYTEA)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class SourceDocument(UUIDPk, Base):

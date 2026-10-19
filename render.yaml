@@ -1,0 +1,54 @@
+# Render Blueprint: one web service (web app + API + in-process scheduler) and one Postgres database.
+# Deploy: https://render.com/deploy?repo=https://github.com/rathixdata/XData-Competitive-Clinical-Intelligence-Agent
+# Render asks for the values marked "sync: false" while you create the Blueprint.
+services:
+  - type: web
+    name: xdata-ci-agent
+    runtime: docker
+    plan: free            # free instances sleep after 15 idle minutes; use "starter" for 24/7 monitoring
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: XDATA_DATABASE_URL
+        fromDatabase:
+          name: xdata-db
+          property: connectionString
+      - key: XDATA_ENV
+        value: production
+      - key: XDATA_LOG_LEVEL
+        value: INFO
+      # Raw source documents are kept in Postgres because free instances have no persistent disk.
+      - key: XDATA_OBJECT_STORE_BACKEND
+        value: postgres
+      - key: XDATA_JWT_SECRET
+        generateValue: true
+      - key: XDATA_FIELD_ENCRYPTION_KEY
+        generateValue: true
+      - key: XDATA_WEBHOOK_SIGNING_SECRET
+        generateValue: true
+      # First sign-in. The workspace ID is what you type in the "Workspace" box on the sign-in page.
+      - key: XDATA_BOOTSTRAP_TENANT
+        value: my-company
+      - key: XDATA_BOOTSTRAP_TENANT_NAME
+        sync: false
+      - key: XDATA_BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: XDATA_BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      # Optional: AI-written summaries and answers with Claude. Leave empty for evidence-only mode.
+      - key: XDATA_ANTHROPIC_API_KEY
+        sync: false
+      # Optional: contact address sent to NCBI (PubMed) and SEC EDGAR, as their fair-use policies ask.
+      - key: XDATA_NCBI_EMAIL
+        sync: false
+      - key: XDATA_SEC_USER_AGENT
+        sync: false
+
+databases:
+  - name: xdata-db
+    plan: free
+    databaseName: xdata
+    user: xdata
+    postgresMajorVersion: "16"

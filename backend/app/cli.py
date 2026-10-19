@@ -40,6 +40,16 @@ def cmd_bootstrap(a: argparse.Namespace) -> None:
         print(json.dumps({"tenant_id": str(t.id), "admin_user_id": str(u.id)}))
 
 
+def cmd_first_run(_a: argparse.Namespace) -> None:
+    """Create the first-run workspace from XDATA_BOOTSTRAP_* settings (no-op once it exists)."""
+    from app.bootstrap import bootstrap_workspace
+    from app.pipeline.ingest import ensure_connector_configs
+
+    with session_scope(bypass_rls=True) as db:
+        ensure_connector_configs(db)
+        print(json.dumps(bootstrap_workspace(db) or {"status": "already set up or XDATA_BOOTSTRAP_TENANT not set"}))
+
+
 def cmd_seed_demo(a: argparse.Namespace) -> None:
     from app.seed.demo import seed_demo
 
@@ -93,6 +103,7 @@ def main(argv: list[str] | None = None) -> None:
     b.add_argument("--sso-subject")
     b.add_argument("--mode", default="multi_tenant", choices=["multi_tenant", "dedicated"])
     b.set_defaults(fn=cmd_bootstrap)
+    sub.add_parser("first-run").set_defaults(fn=cmd_first_run)
     s = sub.add_parser("seed-demo")
     s.add_argument("--no-pipeline", action="store_true")
     s.add_argument("--use-llm", action="store_true")
