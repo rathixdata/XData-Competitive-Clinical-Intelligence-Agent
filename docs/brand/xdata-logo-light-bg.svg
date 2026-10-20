@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="120" viewBox="0 0 520 120">
+  
+  <rect x="0" y="0" width="120" height="120" rx="26" fill="#0F7C7A"/>
+  <path d="M36 36 L84 84 M84 36 L36 84" stroke="#FFFFFF" stroke-width="13" stroke-linecap="round"/>
+  <circle cx="60" cy="60" r="12" fill="#E4572E"/>
+  <text x="146" y="80" font-family="Caladea, Cambria, serif" font-weight="700" font-size="74" fill="#0B3B47">XData</text>
+  <text x="150" y="108" font-family="Carlito, Calibri, sans-serif" font-size="19" letter-spacing="3" fill="#4C6A78">INTELLIGENCE</text>
+</svg>
