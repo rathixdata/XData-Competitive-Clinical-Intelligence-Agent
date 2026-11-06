@@ -72,11 +72,11 @@ jobs:
         env: ${{ fromJSON(inputs.target == 'staging-and-production' && '["staging","production"]' || format('["{0}"]', inputs.target)) }}
     environment: ${{ matrix.env }}
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-kubectl@v5
       - run: aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER_NAME }}" --region "${{ vars.AWS_REGION }}"
       # Application rollback only. Migrations are expand/contract, so the previous
       # release runs against the current schema; no alembic downgrade.
